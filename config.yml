@@ -7,7 +7,7 @@ daqI:
   averages: 5
   terminal: RSE
 daqO:
-  device: Dev1
+  device: cDAQ1
   channels:
     - Dev1/ao0
     - Dev1/ao1
