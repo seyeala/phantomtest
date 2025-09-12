@@ -1,8 +1,9 @@
 """Utility helpers for NI-DAQmx modules.
 
 This module centralises small helper functions that are shared between
-the :mod:`daq.daqI` and :mod:`daq.daqO` modules.  Placing them here keeps the
-other modules focused on their core logic and avoids repetition.
+the :mod:`daqio.daqI` and :mod:`daqio.daqO` modules. Placing them here
+keeps the other modules focused on their core logic and avoids
+repetition.
 """
 
 from __future__ import annotations

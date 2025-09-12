@@ -22,7 +22,8 @@ from typing import Iterable, List, Optional
 import numpy as np
 import nidaqmx
 from nidaqmx.system import System
-import yaml
+
+from .config import load_yaml
 
 
 # ---------------------------------------------------------------------------
@@ -57,10 +58,8 @@ def load_config(path: str) -> dict:
         Dictionary with keys suitable for :func:`write_random`.
     """
 
-    with open(path, "r", encoding="utf-8") as fh:
-        data = yaml.safe_load(fh) or {}
-
-    cfg = {
+    data = load_yaml(path)
+    return {
         "device": data.get("device"),
         "channels": data.get("channels"),
         "interval": data.get("interval"),
@@ -68,7 +67,6 @@ def load_config(path: str) -> dict:
         "high": data.get("high"),
         "seed": data.get("seed"),
     }
-    return cfg
 
 
 # ---------------------------------------------------------------------------
