@@ -9,8 +9,8 @@ daqI:
 daqO:
   device: cDAQ1
   channels:
-    - Dev1/ao0
-    - Dev1/ao1
+    - cDAQ1/ao0
+    - cDAQ1/ao1
   low: 0.0
   high: 3.0
   interval: 0.5
