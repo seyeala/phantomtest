@@ -7,10 +7,10 @@ daqI:
   averages: 5
   terminal: RSE
 daqO:
-  device: cDAQ1
+  device: cDAQ1Mod1
   channels:
-    - cDAQ1/ao0
-    - cDAQ1/ao1
+    - cDAQ1Mod1/ao0
+    - cDAQ1Mod1/ao1
   low: 0.0
   high: 3.0
   interval: 0.5
