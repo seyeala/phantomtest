@@ -29,11 +29,11 @@ import argparse
 import random
 import time
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, Iterable, Optional
 
 import nidaqmx
 
-from .utils import load_yaml
+from .utils import load_yaml, parse_args_with_config as _parse_args_with_config
 
 
 @dataclass
@@ -52,17 +52,19 @@ class Config:
 # Configuration loading
 # ---------------------------------------------------------------------------
 
-def load_config(path: str) -> Dict[str, Any]:
-    """Load configuration from ``path``.
+def load_config(data_or_path: Dict[str, Any] | str) -> Dict[str, Any]:
+    """Load configuration from ``data_or_path``.
 
-    The YAML file must define the device name, list of channel names,
-    voltage range and update interval.  Optionally a random-number seed
-    can be provided.
+    The argument may either be a path to a YAML file or a dictionary with
+    configuration values.  The YAML file must define the device name, list
+    of channel names, voltage range and update interval.  Optionally a
+    random-number seed can be provided.
 
     Parameters
     ----------
-    path:
-        Path to a YAML configuration file.
+    data_or_path:
+        Path to a YAML configuration file or a mapping of configuration
+        values.
 
     Returns
     -------
@@ -72,7 +74,10 @@ def load_config(path: str) -> Dict[str, Any]:
         optional ``seed``.
     """
 
-    data = load_yaml(path)
+    if isinstance(data_or_path, str):
+        data = load_yaml(data_or_path)
+    else:
+        data = dict(data_or_path)
 
     device = data.get("device")
     channels = data.get("channels")
@@ -109,6 +114,28 @@ def load_config(path: str) -> Dict[str, Any]:
         seed=int(seed) if seed is not None else None,
     )
     return config.__dict__
+
+
+def parse_args_with_config(
+    default_config_path: str | None = None,
+    argv: Optional[Iterable[str]] = None,
+) -> Dict[str, Any]:
+    """Parse CLI arguments and optional YAML configuration."""
+
+    parser = argparse.ArgumentParser(
+        description="Write random voltages to NI-DAQmx analog outputs",
+    )
+    parser.add_argument("--device", help="Device name (e.g., Dev1)")
+    parser.add_argument("--channels", nargs="+", help="Analog output channels")
+    parser.add_argument("--low", type=float, help="Low end of voltage range in volts")
+    parser.add_argument("--high", type=float, help="High end of voltage range in volts")
+    parser.add_argument("--interval", type=float, help="Seconds between updates")
+    parser.add_argument("--seed", type=int, help="RNG seed")
+
+    raw_cfg = _parse_args_with_config(
+        parser, default_config_path, section="daqO", argv=argv
+    )
+    return load_config(raw_cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -176,20 +203,13 @@ def write_random(task: nidaqmx.Task, config: Dict[str, Any]) -> None:
 # Command-line entry point
 # ---------------------------------------------------------------------------
 
-def main() -> None:
+def main(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
     """Command-line entry point."""
 
-    parser = argparse.ArgumentParser(
-        description="Write random voltages to NI-DAQmx analog outputs",
-    )
-    parser.add_argument(
-        "--config", required=True, help="Path to YAML configuration file"
-    )
-    args = parser.parse_args()
-
-    cfg = load_config(args.config)
+    cfg = parse_args_with_config("config.yml", argv=argv)
     with setup_task(cfg) as task:
         write_random(task, cfg)
+    return cfg
 
 
 if __name__ == "__main__":  # pragma: no cover - manual use

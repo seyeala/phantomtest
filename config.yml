@@ -1,0 +1,17 @@
+daqI:
+  device: Dev1
+  channels:
+    - Dev1/ai0
+    - Dev1/ai1
+  freq: 10
+  averages: 5
+  terminal: RSE
+daqO:
+  device: Dev1
+  channels:
+    - Dev1/ao0
+    - Dev1/ao1
+  low: 0.0
+  high: 3.0
+  interval: 0.5
+  seed: 1234

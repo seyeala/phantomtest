@@ -8,8 +8,9 @@ other modules focused on their core logic and avoids repetition.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
+import argparse
 import yaml
 
 try:  # pragma: no cover - nidaqmx might not be installed during tests
@@ -63,5 +64,66 @@ def first_device() -> Optional[str]:
     return devices[0] if devices else None
 
 
-__all__ = ["load_yaml", "list_devices", "first_device"]
+def parse_args_with_config(
+    parser: argparse.ArgumentParser,
+    default_config_path: str | None = None,
+    *,
+    section: str | None = None,
+    argv: Optional[Iterable[str]] = None,
+) -> Dict[str, Any]:
+    """Parse command-line arguments with optional YAML defaults.
+
+    Parameters
+    ----------
+    parser:
+        Argument parser instance with all module-specific options already
+        added (except ``--config`` which is handled here).
+    default_config_path:
+        Path to a default YAML configuration file.  May be ``None`` if no
+        default is desired.
+    section:
+        Optional top-level section within the YAML file to load.  This allows
+        a single configuration file to host multiple module configurations.
+    argv:
+        Optional explicit argument list for testing.  If ``None`` the
+        arguments are taken from :data:`sys.argv`.
+
+    Returns
+    -------
+    dict
+        Dictionary containing the merged configuration values.  Any
+        command-line options override values loaded from the configuration
+        file.
+    """
+
+    parser.add_argument(
+        "--config",
+        default=default_config_path,
+        help="Path to YAML configuration file",
+    )
+    args = parser.parse_args(argv)
+
+    cfg: Dict[str, Any] = {}
+    config_path = getattr(args, "config", None)
+    if config_path:
+        data = load_yaml(config_path)
+        if section:
+            cfg.update(data.get(section, {}))
+        else:
+            cfg.update(data)
+
+    for key, value in vars(args).items():
+        if key == "config" or value is None:
+            continue
+        cfg[key] = value
+
+    return cfg
+
+
+__all__ = [
+    "load_yaml",
+    "list_devices",
+    "first_device",
+    "parse_args_with_config",
+]
 

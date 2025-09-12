@@ -27,13 +27,13 @@ from __future__ import annotations
 import argparse
 import time
 from dataclasses import dataclass
-from typing import Any, Dict
+from typing import Any, Dict, Iterable, Optional
 
 import nidaqmx
 from nidaqmx.constants import TerminalConfiguration
 import numpy as np
 
-from .utils import load_yaml
+from .utils import load_yaml, parse_args_with_config as _parse_args_with_config
 
 
 @dataclass
@@ -52,19 +52,21 @@ class Config:
 # ---------------------------------------------------------------------------
 
 
-def load_config(path: str) -> Dict[str, Any]:
-    """Load configuration from ``path``.
+def load_config(data_or_path: Dict[str, Any] | str) -> Dict[str, Any]:
+    """Load configuration from ``data_or_path``.
 
-    The YAML file must define the device name, list of channel names,
-    sample frequency and number of samples to average. Optionally a
-    terminal configuration can be specified. Valid values are those
-    accepted by :class:`nidaqmx.constants.TerminalConfiguration` (e.g.
-    ``RSE``, ``DIFF``).
+    The argument may either be a path to a YAML file or a dictionary with
+    configuration values.  The configuration must define the device name,
+    list of channel names, sample frequency and number of samples to
+    average.  Optionally a terminal configuration can be specified.  Valid
+    values are those accepted by
+    :class:`nidaqmx.constants.TerminalConfiguration` (e.g. ``RSE``, ``DIFF``).
 
     Parameters
     ----------
-    path:
-        Path to a YAML configuration file.
+    data_or_path:
+        Either a mapping of configuration values or a path to a YAML file
+        containing them.
 
     Returns
     -------
@@ -74,7 +76,10 @@ def load_config(path: str) -> Dict[str, Any]:
         ``terminal``.
     """
 
-    data = load_yaml(path)
+    if isinstance(data_or_path, str):
+        data = load_yaml(data_or_path)
+    else:
+        data = dict(data_or_path)
 
     device = data.get("device")
     channels = data.get("channels")
@@ -95,6 +100,42 @@ def load_config(path: str) -> Dict[str, Any]:
         terminal=str(terminal),
     )
     return config.__dict__
+
+
+def parse_args_with_config(
+    default_config_path: str | None = None,
+    argv: Optional[Iterable[str]] = None,
+) -> Dict[str, Any]:
+    """Parse CLI arguments and optional YAML configuration.
+
+    Parameters
+    ----------
+    default_config_path:
+        Optional path to a default configuration file.  Users may override
+        it with ``--config`` on the command line.
+    argv:
+        Optional argument sequence.  If ``None`` the arguments are read from
+        :data:`sys.argv`.
+
+    Returns
+    -------
+    dict
+        Configuration dictionary ready for use by the module.
+    """
+
+    parser = argparse.ArgumentParser(
+        description="Read NI-DAQmx analog inputs and report average voltage",
+    )
+    parser.add_argument("--device", help="Device name (e.g., Dev1)")
+    parser.add_argument("--channels", nargs="+", help="Analog input channels")
+    parser.add_argument("--freq", type=float, help="Sample frequency in Hz")
+    parser.add_argument("--averages", type=int, help="Number of samples to average")
+    parser.add_argument("--terminal", help="Terminal configuration")
+
+    raw_cfg = _parse_args_with_config(
+        parser, default_config_path, section="daqI", argv=argv
+    )
+    return load_config(raw_cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -170,20 +211,13 @@ def read_average(task: nidaqmx.Task, config: Dict[str, Any]) -> Dict[str, float]
 # ---------------------------------------------------------------------------
 
 
-def main() -> None:
+def main(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
     """Command-line entry point."""
 
-    parser = argparse.ArgumentParser(
-        description="Read NI-DAQmx analog inputs and report average voltage",
-    )
-    parser.add_argument(
-        "--config", required=True, help="Path to YAML configuration file"
-    )
-    args = parser.parse_args()
-
-    cfg = load_config(args.config)
+    cfg = parse_args_with_config("config.yml", argv=argv)
     with setup_task(cfg) as task:
         read_average(task, cfg)
+    return cfg
 
 
 if __name__ == "__main__":  # pragma: no cover - manual use
