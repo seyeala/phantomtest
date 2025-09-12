@@ -34,7 +34,8 @@ from .config import load_yaml
 def load_config(path: str) -> dict:
     """Load analog-output configuration from ``path``.
 
-    The YAML file may contain the following keys:
+    The YAML file may contain the following keys, either at the top level or
+    nested under a ``daqO`` section:
 
     ``device`` (str)
         NI-DAQmx device name, e.g. ``Dev1`` or ``cDAQ1Mod1``.
@@ -60,13 +61,17 @@ def load_config(path: str) -> dict:
     """
 
     data = load_yaml(path)
+    cfg = data
+    required = {"device", "interval", "low", "high"}
+    if not required.issubset(cfg.keys()) and "daqO" in data:
+        cfg = data["daqO"]
     return {
-        "device": data.get("device"),
-        "channels": data.get("channels"),
-        "interval": data.get("interval"),
-        "low": data.get("low"),
-        "high": data.get("high"),
-        "seed": data.get("seed"),
+        "device": cfg.get("device"),
+        "channels": cfg.get("channels"),
+        "interval": cfg.get("interval"),
+        "low": cfg.get("low"),
+        "high": cfg.get("high"),
+        "seed": cfg.get("seed"),
     }
 
 
