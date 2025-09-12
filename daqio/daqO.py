@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import time
+from datetime import datetime
 from typing import Iterable, List, Optional
 
 import numpy as np
@@ -137,7 +138,8 @@ def write_random(
                 line = " | ".join(
                     f"{c.split('/')[-1]}={v:5.3f} V" for c, v in zip(ao_channels, values)
                 )
-                print(f"{time.strftime('%H:%M:%S')}  {line}")
+                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                print(f"{ts}  {line}")
                 time.sleep(interval)
         except KeyboardInterrupt:
             print("\nStopped. Setting outputs to 0 V for safety.")

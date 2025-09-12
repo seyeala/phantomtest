@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import time
+from datetime import datetime
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, Optional
 
@@ -172,7 +173,9 @@ def setup_task(config: Dict[str, Any]) -> nidaqmx.Task:
 # ---------------------------------------------------------------------------
 
 
-def read_average(task: nidaqmx.Task, config: Dict[str, Any]) -> Dict[str, float]:
+def read_average(
+    task: nidaqmx.Task, config: Dict[str, Any]
+) -> tuple[Dict[str, float], list[dict[str, Any]]]:
     """Acquire samples and compute the mean voltage per channel.
 
     Parameters
@@ -184,16 +187,22 @@ def read_average(task: nidaqmx.Task, config: Dict[str, Any]) -> Dict[str, float]
 
     Returns
     -------
-    dict
-        Mapping of channel names to mean voltages in volts.
+    tuple of (dict, list of dict)
+        Mapping of channel names to mean voltages in volts and a list of
+        timestamped sample readings for optional post-processing.
     """
 
     sample_interval = 1.0 / config["freq"]
     batch: list[list[float]] = []
+    log: list[dict[str, Any]] = []
     for _ in range(config["averages"]):
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         vals = task.read()
         if not isinstance(vals, list):
             vals = [vals]
+        for ch, val in zip(config["channels"], vals):
+            print(f"{ts} {ch}: {val:.6f} V")
+        log.append({"timestamp": ts, "values": dict(zip(config["channels"], vals))})
         batch.append(vals)
         time.sleep(sample_interval)
 
@@ -203,7 +212,7 @@ def read_average(task: nidaqmx.Task, config: Dict[str, Any]) -> Dict[str, float]
     results = dict(zip(config["channels"], means))
     for ch, val in results.items():
         print(f"{ch}: {val:.6f} V")
-    return results
+    return results, log
 
 
 # ---------------------------------------------------------------------------
