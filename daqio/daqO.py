@@ -5,7 +5,7 @@ channels with random voltages.  Configuration may be supplied either
 programmatically or via a YAML file.  A small command-line interface is
 also provided::
 
-    python -m daqio.daqO --config config.yml
+    python -m daqio.daqO --config configs/config_test.yml
 
 Safety
 ------
