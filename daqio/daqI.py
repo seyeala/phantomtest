@@ -16,7 +16,7 @@ Example YAML configuration::
 
 Run the module from the command line::
 
-    python -m daqio.daqI --config config.yml
+    python -m daqio.daqI --config configs/config_test.yml
 
 The script will acquire the requested number of samples from each
 channel, compute the mean voltage per channel and print the results.
@@ -214,7 +214,7 @@ def read_average(task: nidaqmx.Task, config: Dict[str, Any]) -> Dict[str, float]
 def main(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
     """Command-line entry point."""
 
-    cfg = parse_args_with_config("config.yml", argv=argv)
+    cfg = parse_args_with_config("configs/config_test.yml", argv=argv)
     with setup_task(cfg) as task:
         read_average(task, cfg)
     return cfg

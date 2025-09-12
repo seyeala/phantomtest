@@ -9,6 +9,7 @@ PhantomTest provides a minimal test harness for verifying connectivity to a vari
 * `test_device_names.py` – lists device names and product types using the NI‑DAQmx Python API.
 * `test_ai_all.py` – reads all analog input channels on a specified NI device, averaging a given number of samples at a specified frequency.
 * `requirements.txt` – Python dependencies needed for the scripts.
+* `configs/` – sample YAML configuration files.
 
 ## Driver prerequisites
 
@@ -63,7 +64,7 @@ The scripts will report the detected hardware or analog input readings.
 
 The `daqio` package provides lightweight helpers for working with NI-DAQmx
 analog channels. It requires the NI‑DAQmx runtime and the Python `nidaqmx`
-package to be installed.
+package to be installed. Sample configuration files live under `configs/`.
 
 ### Analog input (`daqio/daqI.py`)
 
@@ -88,7 +89,7 @@ daqI:
 Run the module as a script:
 
 ```bash
-python -m daqio.daqI --config config.yml
+python -m daqio.daqI --config configs/config_test.yml
 ```
 
 See the module docstring for details on the expected schema and additional
@@ -118,7 +119,7 @@ daqO:
 Run the module as a script:
 
 ```bash
-python -m daqio.daqO --config config.yml
+python -m daqio.daqO --config configs/config_test.yml
 ```
 
 **Safety note:** the module resets all outputs to `0 V` on exit, even when
