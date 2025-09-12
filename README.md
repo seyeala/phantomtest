@@ -1,16 +1,24 @@
 # PhantomTest
 
-PhantomTest provides a minimal test harness for verifying connectivity to a variety of data acquisition (DAQ) devices. The repository contains a single script, `test_daqs.py`, that attempts to detect attached hardware from several vendors.
+PhantomTest provides a minimal test harness for verifying connectivity to a variety of data acquisition (DAQ) devices.
+
+## Repository layout
+
+* `test_daqs.py` – imports DAQ vendor libraries (LabJack LJM, MCC UL, NI‑DAQmx) and reports whether each module is available.
+* `test_nidaqmx_devices.py` – enumerates NI‑DAQmx devices and prints the name and product type of each detected device.
+* `test_device_names.py` – lists device names and product types using the NI‑DAQmx Python API.
+* `test_ai_all.py` – reads all analog input channels on a specified NI device, averaging a given number of samples at a specified frequency.
+* `requirements.txt` – Python dependencies needed for the scripts.
 
 ## Driver prerequisites
 
-The test script expects the vendor drivers below to already be installed on the host system:
+The scripts expect the vendor drivers below to already be installed on the host system:
 
 * **LabJack LJM** – runtime and drivers for LabJack devices
 * **MCC UL** – Measurement Computing Universal Library
-* **NI-DAQmx Runtime** – runtime libraries for National Instruments DAQ hardware
+* **NI‑DAQmx Runtime** – runtime libraries for National Instruments DAQ hardware
 
-Install the appropriate driver packages from each vendor before running the test.
+Install the appropriate driver packages from each vendor before running the scripts.
 
 ## Setup
 
@@ -21,13 +29,33 @@ Install the appropriate driver packages from each vendor before running the test
    pip install -r requirements.txt
    ```
 
-## Running the test script
+## Running the scripts
 
-Execute the DAQ detection script from the repository root:
+Execute the scripts from the repository root:
 
-```bash
-python test_daqs.py
-```
+* Detect available drivers:
 
-The script will report which supported devices are available on the system.
+   ```bash
+   python test_daqs.py
+   ```
+
+* List NI‑DAQmx devices:
+
+   ```bash
+   python test_nidaqmx_devices.py
+   ```
+
+* Print device names and types:
+
+   ```bash
+   python test_device_names.py
+   ```
+
+* Sample analog inputs from all channels on a device:
+
+   ```bash
+   python test_ai_all.py --dev <DEVICE_NAME> --freq <Hz> --n <samples>
+   ```
+
+The scripts will report the detected hardware or analog input readings.
 
