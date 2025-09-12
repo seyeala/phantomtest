@@ -16,7 +16,7 @@ Example YAML configuration::
 
 Run the module from the command line::
 
-    python -m daq.daqI --config config.yml
+    python -m daqio.daqI --config config.yml
 
 The script will acquire the requested number of samples from each
 channel, compute the mean voltage per channel and print the results.
@@ -33,7 +33,7 @@ import nidaqmx
 from nidaqmx.constants import TerminalConfiguration
 import numpy as np
 
-from .utils import load_yaml, parse_args_with_config as _parse_args_with_config
+from .config import load_yaml, parse_args_with_config as _parse_args_with_config
 
 
 @dataclass
