@@ -60,6 +60,20 @@ Execute the scripts from the repository root:
 
 The scripts will report the detected hardware or analog input readings.
 
+## Running tests
+
+Install the test dependencies:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+Then run the test suite:
+
+```bash
+pytest
+```
+
 ## DAQ I/O helpers
 
 The `daqio` package provides lightweight helpers for working with NI-DAQmx
