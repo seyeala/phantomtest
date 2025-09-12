@@ -8,6 +8,7 @@ PhantomTest provides a minimal test harness for verifying connectivity to a vari
 * `test_nidaqmx_devices.py` – enumerates NI‑DAQmx devices and prints the name and product type of each detected device.
 * `test_device_names.py` – lists device names and product types using the NI‑DAQmx Python API.
 * `test_ai_all.py` – reads all analog input channels on a specified NI device, averaging a given number of samples at a specified frequency.
+* `test_ao_random.py` – writes random voltages to all analog output channels on a specified NI device.
 * `requirements.txt` – Python dependencies needed for the scripts.
 * `configs/` – sample YAML configuration files.
 
@@ -58,7 +59,13 @@ Execute the scripts from the repository root:
    python test_ai_all.py --dev <DEVICE_NAME> --freq <Hz> --n <samples>
    ```
 
-The scripts will report the detected hardware or analog input readings.
+* Drive random voltages on all analog output channels of a device:
+
+   ```bash
+   python test_ao_random.py --dev <DEVICE_NAME> --interval <s> --low <V> --high <V>
+   ```
+
+The scripts will report the detected hardware or analog input/output readings.
 
 ## DAQ I/O helpers
 
