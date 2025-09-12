@@ -1,0 +1,17 @@
+ostream:
+  # Fixed O-stream filename timestamp schema
+  # This is NOT configurable in current loader code (hardcoded regex),
+  # but writing it here makes it explicit for your own parsers.
+
+  filename_pattern: "M{mon}-D{day}-H{hour}-M{minute}-S{sec}-U.{u}"
+
+  fields:
+    mon:    "2-digit month (01–12)"
+    day:    "2-digit day (01–31)"
+    hour:   "2-digit hour (00–23)"
+    minute: "2-digit minute (00–59)"
+    sec:    "2-digit second (00–59)"
+    u:      "3-digit milliseconds (e.g. 128 → 128 ms → internally 128000 µs)"
+
+  example_filename: "M08-D19-H16-M24-S03-U.128.os"
+  example_resolution: "2025-08-19T16:24:03.128000Z  # year from year_fallback, timezone UTC"
