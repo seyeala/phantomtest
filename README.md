@@ -59,3 +59,71 @@ Execute the scripts from the repository root:
 
 The scripts will report the detected hardware or analog input readings.
 
+## DAQ I/O helpers
+
+The `daq` and `daqio` packages provide lightweight helpers for working with
+NI-DAQmx analog channels. They require the NI‑DAQmx runtime and the Python
+`nidaqmx` package to be installed.
+
+### Analog input (`daq/daqI.py`)
+
+`daq/daqI.py` reads one or more analog-input channels and prints the average
+voltage per channel. Configuration is supplied via YAML and must define the
+device name, channel list, sample frequency and number of averages; the
+terminal configuration is optional【F:daq/daqI.py†L1-L22】【F:daq/daqI.py†L55-L76】.
+
+Example configuration:
+
+```yaml
+daqI:
+  device: Dev1
+  channels:
+    - Dev1/ai0
+    - Dev1/ai1
+  freq: 10
+  averages: 5
+  terminal: RSE
+```
+
+Run the module as a script:
+
+```bash
+python -m daq.daqI --config config.yml
+```
+
+See the module docstring for details on the expected schema and additional
+options.
+
+### Analog output (`daqio/daqO.py`)
+
+`daqio/daqO.py` continuously drives analog-output channels with random voltages
+generated within a user-specified range. Its YAML configuration accepts the
+device name, optional channel list, update interval, voltage bounds and random
+seed【F:daqio/daqO.py†L1-L13】【F:daqio/daqO.py†L32-L47】.
+
+Example configuration:
+
+```yaml
+daqO:
+  device: Dev1
+  channels:
+    - Dev1/ao0
+    - Dev1/ao1
+  interval: 0.5
+  low: 0.0
+  high: 3.0
+  seed: 1234
+```
+
+Run the module as a script:
+
+```bash
+python -m daqio.daqO --config config.yml
+```
+
+**Safety note:** the module resets all outputs to `0 V` on exit, even when
+interrupted with `Ctrl+C`, to avoid leaving channels in an unsafe state【F:daqio/daqO.py†L10-L13】【F:daqio/daqO.py†L103-L106】.
+
+Consult the docstring for further information about the CLI and configuration
+options.
+
