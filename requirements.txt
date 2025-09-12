@@ -1,4 +1,3 @@
 labjack-ljm
-labjack-u3
 mcculw
 nidaqmx
