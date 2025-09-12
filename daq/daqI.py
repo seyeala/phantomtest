@@ -32,7 +32,8 @@ from typing import Any, Dict
 import nidaqmx
 from nidaqmx.constants import TerminalConfiguration
 import numpy as np
-import yaml
+
+from .utils import load_yaml
 
 
 @dataclass
@@ -73,8 +74,7 @@ def load_config(path: str) -> Dict[str, Any]:
         ``terminal``.
     """
 
-    with open(path, "r", encoding="utf-8") as fh:
-        data = yaml.safe_load(fh) or {}
+    data = load_yaml(path)
 
     device = data.get("device")
     channels = data.get("channels")
