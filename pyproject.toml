@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phantomtest"
+version = "0.1.0"
+description = "Test utilities for verifying DAQ drivers"
+readme = "readme.md"
+requires-python = ">=3.8"
+dependencies = [
+    "labjack-ljm",
+    "labjack-u3",
+    "mcculw",
+    "nidaqmx",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["phantomtest"]
