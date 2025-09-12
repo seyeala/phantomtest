@@ -32,7 +32,8 @@ from dataclasses import dataclass
 from typing import Any, Dict
 
 import nidaqmx
-import yaml
+
+from .utils import load_yaml
 
 
 @dataclass
@@ -71,8 +72,7 @@ def load_config(path: str) -> Dict[str, Any]:
         optional ``seed``.
     """
 
-    with open(path, "r", encoding="utf-8") as fh:
-        data = yaml.safe_load(fh) or {}
+    data = load_yaml(path)
 
     device = data.get("device")
     channels = data.get("channels")
