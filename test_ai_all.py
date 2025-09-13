@@ -1,3 +1,19 @@
+"""Average readings across all AI channels of a National Instruments device.
+
+The script enumerates every analog input channel on the specified NI device,
+repeatedly samples them and reports the mean voltage across a user-provided
+number of samples.
+
+Example
+-------
+Run the script by specifying a device name, sampling frequency, and the number
+of samples to average:
+
+```
+python test_ai_all.py --dev Dev1 --freq 10 --n 100
+```
+"""
+
 import time
 import argparse
 import numpy as np
@@ -7,6 +23,17 @@ from nidaqmx.constants import TerminalConfiguration
 
 
 def main(dev, freq, n_avg):
+    """Read and average all analog input channels on an NI device.
+
+    Parameters
+    ----------
+    dev : str
+        Name of the NI device (for example ``"Dev1"`` or ``"cDAQ1Mod1"``).
+    freq : float
+        Sample frequency in Hertz.
+    n_avg : int
+        Number of consecutive samples to average per channel.
+    """
     # Find device
     system = System.local()
     device = next((d for d in system.devices if d.name == dev), None)
