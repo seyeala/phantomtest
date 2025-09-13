@@ -1,9 +1,11 @@
 """Random analog-output helper for NI-DAQmx.
 
 This module provides utilities for driving one or more analog-output (AO)
-channels with random voltages.  Configuration may be supplied either
-programmatically or via a YAML file.  A small command-line interface is
-also provided::
+channels with random voltages. Configuration may be supplied either
+programmatically or via a YAML file. The configuration must come from a
+``daqO`` section; reusing ``daqI`` entries for outputs can trigger NI-DAQmx
+``I/O type`` errors or energize unintended channels. A small command-line
+interface is also provided::
 
     python -m daqio.daqO --config configs/config_test.yml
 
