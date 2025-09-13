@@ -5,7 +5,7 @@ daqI:
     - Dev1/ai1
   freq: 10
   averages: 5
-  omissions: 0
+  omissions: 0  # number of sample intervals to skip between reads
   terminal: RSE
 daqO:
   device: cDAQ1Mod1
