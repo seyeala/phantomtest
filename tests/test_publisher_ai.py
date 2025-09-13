@@ -48,7 +48,7 @@ def test_read_average_publish(monkeypatch):
         daqI, "load_output_config", lambda path: ("%Y", "out.csv", ["timestamp", "c1", "c2"])
     )
     monkeypatch.setattr(daqI.time, "sleep", lambda s: None)
-    cfg = {"freq": 1.0, "averages": 1, "channels": ["c1", "c2"]}
+    cfg = {"freq": 1.0, "averages": 1, "omissions": 0, "channels": ["c1", "c2"]}
     task = DummyTask([1.0, 2.0])
     read_average(task, cfg)
     assert captured["data"]["results"] == {"c1": 1.0, "c2": 2.0}

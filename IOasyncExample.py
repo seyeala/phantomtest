@@ -20,7 +20,7 @@ async def ai_loop(cfg: dict):
     with setup_task(cfg) as task:
         while True:
             await asyncio.to_thread(read_average, task, cfg)
-            # read_average sleeps internally according to cfg["freq"]
+            # read_average sleeps internally according to cfg["freq"] and cfg["omissions"]
 
 
 async def queue_reader(q: asyncio.Queue, label: str):

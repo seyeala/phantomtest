@@ -15,6 +15,7 @@ Example YAML configuration::
       - Dev1/ai1
     freq: 10          # sample frequency in Hz
     averages: 5       # number of samples to average
+    omissions: 0      # number of sample intervals to skip between reads
     terminal: RSE     # optional terminal configuration
 
 Run the module from the command line::
@@ -55,6 +56,7 @@ class Config:
     channels: list[str]
     freq: float
     averages: int
+    omissions: int
     terminal: str = "RSE"
 
 
@@ -68,9 +70,9 @@ def load_config(data_or_path: Dict[str, Any] | str) -> Dict[str, Any]:
 
     The argument may either be a path to a YAML file or a dictionary with
     configuration values.  The configuration must define the device name,
-    list of channel names, sample frequency and number of samples to
-    average.  Optionally a terminal configuration can be specified.  Valid
-    values are those accepted by
+    list of channel names, sample frequency, number of samples to average and
+    the number of sample intervals to skip between reads.  Optionally a
+    terminal configuration can be specified.  Valid values are those accepted by
     :class:`nidaqmx.constants.TerminalConfiguration` (e.g. ``RSE``, ``DIFF``).
 
     Parameters
@@ -83,8 +85,8 @@ def load_config(data_or_path: Dict[str, Any] | str) -> Dict[str, Any]:
     -------
     dict
         Dictionary containing the parsed configuration with keys
-        ``device``, ``channels``, ``freq``, ``averages`` and optional
-        ``terminal``.
+        ``device``, ``channels``, ``freq``, ``averages``, ``omissions`` and
+        optional ``terminal``.
     """
 
     if isinstance(data_or_path, str):
@@ -96,11 +98,18 @@ def load_config(data_or_path: Dict[str, Any] | str) -> Dict[str, Any]:
     channels = data.get("channels")
     freq = data.get("freq")
     averages = data.get("averages")
+    omissions = data.get("omissions")
     terminal = data.get("terminal", "RSE")
 
-    if device is None or not channels or freq is None or averages is None:
+    if (
+        device is None
+        or not channels
+        or freq is None
+        or averages is None
+        or omissions is None
+    ):
         raise ValueError(
-            "Config must include device, channels, freq and averages"
+            "Config must include device, channels, freq, averages and omissions"
         )
 
     config = Config(
@@ -108,6 +117,7 @@ def load_config(data_or_path: Dict[str, Any] | str) -> Dict[str, Any]:
         channels=list(channels),
         freq=float(freq),
         averages=int(averages),
+        omissions=int(omissions),
         terminal=str(terminal),
     )
     return config.__dict__
@@ -141,6 +151,11 @@ def parse_args_with_config(
     parser.add_argument("--channels", nargs="+", help="Analog input channels")
     parser.add_argument("--freq", type=float, help="Sample frequency in Hz")
     parser.add_argument("--averages", type=int, help="Number of samples to average")
+    parser.add_argument(
+        "--omissions",
+        type=int,
+        help="Number of sample intervals to skip between reads",
+    )
     parser.add_argument("--terminal", help="Terminal configuration")
 
     raw_cfg = _parse_args_with_config(
@@ -193,7 +208,7 @@ def read_average(
     task:
         Configured :class:`nidaqmx.Task` containing AI channels.
     config:
-        Configuration dictionary with ``freq`` and ``averages`` keys.
+        Configuration dictionary with ``freq``, ``averages`` and ``omissions`` keys.
 
     Returns
     -------
@@ -221,7 +236,7 @@ def read_average(
             print(f"{ts} {ch}: {val:.6f} V")
         log.append({"timestamp": ts, "values": dict(zip(config["channels"], vals))})
         batch.append(vals)
-        time.sleep(sample_interval)
+        time.sleep(sample_interval * (config["omissions"] + 1))
 
     arr = np.asarray(batch, dtype=float)
     means = np.nanmean(arr, axis=0)
