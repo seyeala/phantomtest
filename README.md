@@ -90,8 +90,8 @@ each section separately when performing simultaneous input and output.
 
 `daqio/daqI.py` reads one or more analog-input channels and prints the average
 voltage per channel. Configuration is supplied via YAML and must define the
-device name, channel list, sample frequency and number of averages; the
-terminal configuration is optional【F:daqio/daqI.py†L1-L26】【F:daqio/daqI.py†L66-L74】.
+device name, channel list, sample frequency, number of averages and number of
+omitted intervals between reads; the terminal configuration is optional【F:daqio/daqI.py†L1-L26】【F:daqio/daqI.py†L66-L74】.
 Use only the `daqI` section for these settings; sourcing channel lists from
 `daqO` may cause NI‑DAQmx `I/O type` errors or unintended output.
 
@@ -105,6 +105,7 @@ daqI:
     - Dev1/ai1
   freq: 10
   averages: 5
+  omissions: 0
   terminal: RSE
 ```
 
