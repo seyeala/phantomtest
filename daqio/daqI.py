@@ -25,9 +25,11 @@ channel, compute the mean voltage per channel and print the results.
 from __future__ import annotations
 
 import argparse
+import asyncio
 import time
 from datetime import datetime
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
 import nidaqmx
@@ -35,6 +37,7 @@ from nidaqmx.constants import TerminalConfiguration
 import numpy as np
 
 from .config import load_yaml, parse_args_with_config as _parse_args_with_config
+from .publisher import publish_ai
 
 
 @dataclass
@@ -212,6 +215,21 @@ def read_average(
     results = dict(zip(config["channels"], means))
     for ch, val in results.items():
         print(f"{ch}: {val:.6f} V")
+
+    cfg_path = (
+        Path(__file__).resolve().parent.parent / "configs" / "daqI_output.yml"
+    )
+    out_cfg = load_yaml(cfg_path)
+    ts_format = out_cfg.get("timestamp_format", "%Y-%m-%d %H:%M:%S.%f")
+    ts = datetime.now().strftime(ts_format)
+    payload = {"timestamp": ts, "results": results}
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(publish_ai(payload))
+    else:
+        loop.create_task(publish_ai(payload))
+
     return results, log
 
 
