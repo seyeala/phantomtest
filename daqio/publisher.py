@@ -1,3 +1,7 @@
+"""Manage queues and CSV writers for analog I/O.
+
+Public API: publish_ao, publish_ai, start_ao_consumer, start_ai_consumer.
+"""
 import asyncio
 from pathlib import Path
 import csv
