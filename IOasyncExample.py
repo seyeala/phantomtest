@@ -2,6 +2,7 @@ import asyncio
 
 from daqio.daqO import write_random
 from daqio.daqI import load_config, setup_task, read_average
+from daqio.config import load_yaml
 from daqio import publisher
 
 
@@ -22,7 +23,7 @@ async def queue_reader(q: asyncio.Queue, label: str):
 
 
 async def main():
-    cfg = load_config("configs/config_test.yml")
+    cfg = load_config(load_yaml("configs/config_test.yml")["daqI"])
 
     # background writers to CSV
     ao_writer = publisher.start_ao_consumer("ao.csv", ["timestamp", *cfg["channels"]])
