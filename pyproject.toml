@@ -13,5 +13,11 @@ dependencies = ["nidaqmx", "pyyaml"]
 [project.optional-dependencies]
 test = ["pytest"]
 
+[project.scripts]
+list-devices = "list_devices:main"
+
+[tool.setuptools]
+py-modules = ["list_devices"]
+
 [tool.setuptools.packages.find]
 include = ["daqio"]
