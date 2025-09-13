@@ -13,6 +13,7 @@ PhantomTest provides a minimal test harness for verifying connectivity to a vari
 * **Scripts**
   * `list_devices.py` – lists device names and product types.
   * `IOasyncExample.py` – asynchronous analog I/O demo.
+  * `IOasyncInteractive.py` – async analog I/O demo with keypress exit.
   * `test_ai_all.py` – reads all analog input channels, averaging samples.
   * `test_ao_random.py` – drives analog-output channels with random voltages.
 * **Package**
