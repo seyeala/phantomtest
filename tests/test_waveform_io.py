@@ -15,17 +15,28 @@ if str(ROOT) not in sys.path:
 from daqio import publisher
 from daqio.ao_runner import AsyncAORunner
 from daqio.ai_reader import AIReader
+from daqio.config import load_yaml
 
-try:  # Skip entire module if NI-DAQmx is unavailable
+CONFIG_PATH = ROOT / "configs" / "config_test.yml"
+
+try:  # Skip entire module if NI-DAQmx is unavailable or config incomplete
+    cfg = load_yaml(CONFIG_PATH)
+    ao_cfg = cfg["daqO"]
+    ai_cfg = cfg["daqI"]
+    _ao_device = ao_cfg["device"]
+    _ao_channels = ao_cfg["channels"]
+    _ai_device = ai_cfg["device"]
+    _ai_channels = ai_cfg["channels"]
+
     from nidaqmx.system import System
-    _system = System.local()
-    _devices = list(_system.devices)
-    if not _devices:
-        raise RuntimeError("No NI-DAQmx devices detected")
-    _device = _devices[0]
-    if not _device.ao_physical_chans or not _device.ai_physical_chans:
-        raise RuntimeError("Device lacks required AO/AI channels")
-except Exception as e:  # pragma: no cover - skip if hardware missing
+
+    system = System.local()
+    devices = {dev.name: dev for dev in system.devices}
+    if _ao_device not in devices or _ai_device not in devices:
+        raise RuntimeError("Configured NI-DAQmx devices not detected")
+    if not devices[_ao_device].ao_physical_chans or not devices[_ai_device].ai_physical_chans:
+        raise RuntimeError("Configured devices lack required AO/AI channels")
+except Exception as e:  # pragma: no cover - skip if hardware or config missing
     pytest.skip(f"NI-DAQmx system unavailable: {e}", allow_module_level=True)
 
 
@@ -40,21 +51,17 @@ async def queue_printer(get_queue):
         pass
 
 
-def _make_reader_writer(pressures):
-    dev_name = _device.name
-    ao_ch = _device.ao_physical_chans[0].name
-    ai_ch = _device.ai_physical_chans[0].name
-
+def _make_reader_writer(pressures, ao_device, ao_channels, ai_device, ai_channels):
     runner = AsyncAORunner(
-        device=dev_name,
-        channels=[ao_ch],
+        device=ao_device,
+        channels=ao_channels,
         waveform=pressures,
         frequency=0.1,
         publish=publisher.publish_ao,
     )
     reader = AIReader(
-        device=dev_name,
-        channels=[ai_ch],
+        device=ai_device,
+        channels=ai_channels,
         freq=0.1,
         averages=1,
         omissions=0,
@@ -75,7 +82,9 @@ async def ai_loop(reader):
 @pytest.mark.asyncio
 async def test_waveform_io():
     pressures = np.loadtxt(Path(__file__).resolve().parent / "daqio" / "apressure.csv")
-    runner, reader = _make_reader_writer(pressures)
+    runner, reader = _make_reader_writer(
+        pressures, _ao_device, _ao_channels, _ai_device, _ai_channels
+    )
 
     with reader:
         async with runner:
