@@ -2,7 +2,10 @@
 
 This module provides a convenience wrapper for reading voltages from
 multiple analog-input (AI) channels of a National Instruments device.
-Configuration is supplied through a YAML file.
+Configuration is supplied through a YAML file. The YAML data must contain
+a dedicated ``daqI`` section for AI channels only. Analog outputs belong
+in a separate ``daqO`` section; mixing them may raise NI-DAQmx ``I/O type``
+errors or drive unintended channels.
 
 Example YAML configuration::
 

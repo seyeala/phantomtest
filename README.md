@@ -80,12 +80,20 @@ The `daqio` package provides lightweight helpers for working with NI-DAQmx
 analog channels. It requires the NI‑DAQmx runtime and the Python `nidaqmx`
 package to be installed. Sample configuration files live under `configs/`.
 
+Configurations are split into `daqI` (analog input) and `daqO` (analog output)
+sections. `daqI` blocks are **only** for inputs; `daqO` blocks are the sole
+safe source for outputs. Mixing these sections can raise NI‑DAQmx `I/O type`
+errors or drive unintended channels. `IOasyncExample.py` demonstrates loading
+each section separately when performing simultaneous input and output.
+
 ### Analog input (`daqio/daqI.py`)
 
 `daqio/daqI.py` reads one or more analog-input channels and prints the average
 voltage per channel. Configuration is supplied via YAML and must define the
 device name, channel list, sample frequency and number of averages; the
-terminal configuration is optional【F:daqio/daqI.py†L1-L22】【F:daqio/daqI.py†L55-L76】.
+terminal configuration is optional【F:daqio/daqI.py†L1-L26】【F:daqio/daqI.py†L66-L74】.
+Use only the `daqI` section for these settings; sourcing channel lists from
+`daqO` may cause NI‑DAQmx `I/O type` errors or unintended output.
 
 Example configuration:
 
@@ -114,7 +122,9 @@ options.
 `daqio/daqO.py` continuously drives analog-output channels with random voltages
 generated within a user-specified range. Its YAML configuration accepts the
 device name, optional channel list, update interval, voltage bounds and random
-seed【F:daqio/daqO.py†L1-L13】【F:daqio/daqO.py†L33-L48】.
+seed【F:daqio/daqO.py†L1-L16】【F:daqio/daqO.py†L39-L55】.
+Always source these values from the `daqO` section; using `daqI` data for outputs
+can raise NI‑DAQmx `I/O type` errors or drive unintended channels.
 
 Example configuration:
 
