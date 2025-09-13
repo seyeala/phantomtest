@@ -4,13 +4,23 @@ PhantomTest provides a minimal test harness for verifying connectivity to a vari
 
 ## Repository layout
 
-* `tests/test_daqs.py` – imports DAQ vendor libraries (LabJack LJM, MCC UL, NI‑DAQmx) and reports whether each module is available.
-* `tests/test_nidaqmx_devices.py` – enumerates NI‑DAQmx devices and prints the name and product type of each detected device.
-* `tests/test_device_names.py` – lists device names and product types using the NI‑DAQmx Python API.
-* `test_ai_all.py` – reads all analog input channels on a specified NI device, averaging a given number of samples at a specified frequency.
-* `test_ao_random.py` – drives analog-output channels with random voltages within a user-specified range.
-* `requirements.txt` – Python dependencies needed for the scripts.
-* `configs/` – sample YAML configuration files.
+* **Tests**
+  * `tests/test_daqs.py` – imports DAQ vendor libraries and reports availability.
+  * `tests/test_nidaqmx_devices.py` – enumerates NI‑DAQmx devices.
+  * `tests/test_device_names.py` – lists device names and product types.
+  * `tests/test_daqo_config.py` – exercises `daqio.daqO.load_config`.
+  * `tests/test_publisher_ai.py` – verifies the async publisher writes CSV data.
+* **Scripts**
+  * `list_devices.py` – lists device names and product types.
+  * `IOasyncExample.py` – asynchronous analog I/O demo.
+  * `test_ai_all.py` – reads all analog input channels, averaging samples.
+  * `test_ao_random.py` – drives analog-output channels with random voltages.
+* **Package**
+  * `daqio/` – helpers for DAQ I/O and CSV publishing (`daqI.py`, `daqO.py`, `publisher.py`).
+* **Configs**
+  * `configs/` – sample YAML configuration files.
+* **Dependencies**
+  * `requirements.txt` – Python dependencies for the scripts.
 
 ## Driver prerequisites
 
