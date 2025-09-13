@@ -53,6 +53,12 @@ Execute the scripts from the repository root:
    pytest tests/test_device_names.py
    ```
 
+* List device names and product types with a helper script:
+
+   ```bash
+   python list_devices.py
+   ```
+
 * Sample analog inputs from all channels on a device:
 
    ```bash
