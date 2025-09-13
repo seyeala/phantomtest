@@ -11,7 +11,7 @@ requires-python = ">=3.8"
 dependencies = ["nidaqmx", "pyyaml"]
 
 [project.optional-dependencies]
-test = ["pytest"]
+test = ["pytest", "pytest-asyncio"]
 
 [project.scripts]
 list-devices = "list_devices:main"
