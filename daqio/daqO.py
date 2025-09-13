@@ -26,7 +26,7 @@ import numpy as np
 import nidaqmx
 from nidaqmx.system import System
 
-from .config import load_yaml
+from .config import load_yaml, load_output_config
 from .publisher import publish_ao, start_ao_consumer
 
 
@@ -138,10 +138,9 @@ async def write_random(
         if output_config
         else Path(__file__).resolve().parent.parent / "configs" / "daqO_output.yml"
     )
-    out_cfg = load_yaml(cfg_path)
-    ts_format = out_cfg.get("timestamp_format", "%Y-%m-%d %H:%M:%S.%f")
-    csv_path = out_cfg.get("csv_path", "ao_output.csv")
-    columns = out_cfg.get("columns", ["timestamp"] + ao_channels)
+    ts_format, csv_path, columns = load_output_config(cfg_path)
+    if columns == ["timestamp"]:
+        columns = ["timestamp", *ao_channels]
 
     consumer_task = start_ao_consumer(csv_path, columns)
 

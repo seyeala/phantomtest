@@ -36,7 +36,11 @@ import nidaqmx
 from nidaqmx.constants import TerminalConfiguration
 import numpy as np
 
-from .config import load_yaml, parse_args_with_config as _parse_args_with_config
+from .config import (
+    load_yaml,
+    parse_args_with_config as _parse_args_with_config,
+    load_output_config,
+)
 from .publisher import publish_ai
 
 
@@ -177,7 +181,7 @@ def setup_task(config: Dict[str, Any]) -> nidaqmx.Task:
 
 
 def read_average(
-    task: nidaqmx.Task, config: Dict[str, Any]
+    task: nidaqmx.Task, config: Dict[str, Any], output_config: str | None = None
 ) -> tuple[Dict[str, float], list[dict[str, Any]]]:
     """Acquire samples and compute the mean voltage per channel.
 
@@ -194,6 +198,13 @@ def read_average(
         Mapping of channel names to mean voltages in volts and a list of
         timestamped sample readings for optional post-processing.
     """
+
+    cfg_path = (
+        Path(output_config)
+        if output_config
+        else Path(__file__).resolve().parent.parent / "configs" / "daqI_output.yml"
+    )
+    ts_format, _, _ = load_output_config(cfg_path)
 
     sample_interval = 1.0 / config["freq"]
     batch: list[list[float]] = []
@@ -216,11 +227,6 @@ def read_average(
     for ch, val in results.items():
         print(f"{ch}: {val:.6f} V")
 
-    cfg_path = (
-        Path(__file__).resolve().parent.parent / "configs" / "daqI_output.yml"
-    )
-    out_cfg = load_yaml(cfg_path)
-    ts_format = out_cfg.get("timestamp_format", "%Y-%m-%d %H:%M:%S.%f")
     ts = datetime.now().strftime(ts_format)
     payload = {"timestamp": ts, "results": results}
     try:

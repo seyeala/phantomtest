@@ -44,7 +44,9 @@ def test_read_average_publish(monkeypatch):
         captured["data"] = data
 
     monkeypatch.setattr(daqI, "publish_ai", fake_publish)
-    monkeypatch.setattr(daqI, "load_yaml", lambda path: {"timestamp_format": "%Y"})
+    monkeypatch.setattr(
+        daqI, "load_output_config", lambda path: ("%Y", "out.csv", ["timestamp", "c1", "c2"])
+    )
     monkeypatch.setattr(daqI.time, "sleep", lambda s: None)
     cfg = {"freq": 1.0, "averages": 1, "channels": ["c1", "c2"]}
     task = DummyTask([1.0, 2.0])
