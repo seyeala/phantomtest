@@ -1,0 +1,6 @@
+timestamp_format: "%Y-%m-%d %H:%M:%S.%f"
+csv_path: ai_output.csv
+columns:
+  - timestamp
+  - Dev1/ai0
+  - Dev1/ai1
