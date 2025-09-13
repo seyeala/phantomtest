@@ -40,6 +40,52 @@ def load_yaml(path: str | Path) -> Dict[str, Any]:
     return data or {}
 
 
+def load_output_config(path: str | Path) -> tuple[str, str, List[str]]:
+    """Load and validate output configuration.
+
+    The configuration file may define the following optional keys:
+
+    ``timestamp_format``
+        ``datetime.strftime``-compatible format string.  Defaults to
+        ``"%Y-%m-%d %H:%M:%S.%f"``.
+    ``csv_path``
+        Output CSV file path.  Defaults to ``"output.csv"``.
+    ``columns``
+        List of column names for the CSV file.  Defaults to ``["timestamp"]``.
+
+    Parameters
+    ----------
+    path:
+        Path to the YAML configuration file.
+
+    Returns
+    -------
+    tuple
+        ``(timestamp_format, csv_path, columns)``
+
+    Raises
+    ------
+    ValueError
+        If ``csv_path`` is not a string or ``columns`` is not a
+        non-empty list of strings.
+    """
+
+    data = load_yaml(path)
+
+    ts_fmt = data.get("timestamp_format", "%Y-%m-%d %H:%M:%S.%f")
+    csv_path = data.get("csv_path", "output.csv")
+    if not isinstance(csv_path, str):
+        raise ValueError("'csv_path' must be a string")
+
+    columns = data.get("columns", ["timestamp"])
+    if not isinstance(columns, list) or not columns:
+        raise ValueError("'columns' must be a non-empty list")
+    if not all(isinstance(col, str) for col in columns):
+        raise ValueError("All column names must be strings")
+
+    return ts_fmt, csv_path, columns
+
+
 def list_devices() -> List[str]:
     """Return names of detected NI-DAQmx devices.
 
@@ -123,6 +169,7 @@ def parse_args_with_config(
 
 __all__ = [
     "load_yaml",
+    "load_output_config",
     "list_devices",
     "first_device",
     "parse_args_with_config",
