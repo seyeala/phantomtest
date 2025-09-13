@@ -16,8 +16,10 @@ interrupts the program with ``Ctrl+C``.
 from __future__ import annotations
 
 import argparse
-import time
+import asyncio
+import contextlib
 from datetime import datetime
+from pathlib import Path
 from typing import Iterable, List, Optional
 
 import numpy as np
@@ -25,6 +27,7 @@ import nidaqmx
 from nidaqmx.system import System
 
 from .config import load_yaml
+from .publisher import publish_ao, start_ao_consumer
 
 
 # ---------------------------------------------------------------------------
@@ -79,13 +82,14 @@ def load_config(path: str) -> dict:
 # Random output loop
 # ---------------------------------------------------------------------------
 
-def write_random(
+async def write_random(
     dev: str,
     interval: float,
     low: float,
     high: float,
     seed: Optional[int] = None,
     channels: Optional[Iterable[str]] = None,
+    output_config: Optional[str] = None,
 ) -> None:
     """Continuously write random voltages to analog outputs.
 
@@ -129,6 +133,18 @@ def write_random(
     )
     print("Press Ctrl+C to stop.\n")
 
+    cfg_path = (
+        Path(output_config)
+        if output_config
+        else Path(__file__).resolve().parent.parent / "configs" / "daqO_output.yml"
+    )
+    out_cfg = load_yaml(cfg_path)
+    ts_format = out_cfg.get("timestamp_format", "%Y-%m-%d %H:%M:%S.%f")
+    csv_path = out_cfg.get("csv_path", "ao_output.csv")
+    columns = out_cfg.get("columns", ["timestamp"] + ao_channels)
+
+    consumer_task = start_ao_consumer(csv_path, columns)
+
     with nidaqmx.Task() as task:
         for ch in ao_channels:
             task.ao_channels.add_ao_voltage_chan(
@@ -140,18 +156,23 @@ def write_random(
             while True:
                 values = rng.uniform(low, high, size=len(ao_channels)).tolist()
                 task.write(values)
-                line = " | ".join(
-                    f"{c.split('/')[-1]}={v:5.3f} V" for c, v in zip(ao_channels, values)
-                )
-                ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-                print(f"{ts}  {line}")
-                time.sleep(interval)
+                ts = datetime.now().strftime(ts_format)
+                payload = {
+                    "timestamp": ts,
+                    "channel_values": {c: v for c, v in zip(ao_channels, values)},
+                }
+                await publish_ao(payload)
+                await asyncio.sleep(interval)
         except KeyboardInterrupt:
             print("\nStopped. Setting outputs to 0 V for safety.")
             try:
                 task.write([0.0] * len(ao_channels))
             except Exception:
                 pass
+        finally:
+            consumer_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await consumer_task
 
 
 # ---------------------------------------------------------------------------
@@ -197,13 +218,15 @@ def main(argv: Optional[Iterable[str]] = None) -> None:
         missing_str = ", ".join(missing)
         raise SystemExit(f"Missing required configuration: {missing_str}")
 
-    write_random(
-        cfg["device"],
-        float(cfg["interval"]),
-        float(cfg["low"]),
-        float(cfg["high"]),
-        seed=None if cfg.get("seed") in (None, "") else int(cfg["seed"]),
-        channels=cfg.get("channels"),
+    asyncio.run(
+        write_random(
+            cfg["device"],
+            float(cfg["interval"]),
+            float(cfg["low"]),
+            float(cfg["high"]),
+            seed=None if cfg.get("seed") in (None, "") else int(cfg["seed"]),
+            channels=cfg.get("channels"),
+        )
     )
 
 

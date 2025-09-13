@@ -1,4 +1,5 @@
 import argparse
+import asyncio
 from daqio.daqO import write_random
 
 
@@ -9,7 +10,9 @@ def main(dev, interval_s, low, high, seed, channels=None):
     reused by the command-line helper as well as tests.
     """
 
-    write_random(dev, interval_s, low, high, seed=seed, channels=channels)
+    asyncio.run(
+        write_random(dev, interval_s, low, high, seed=seed, channels=channels)
+    )
 
 
 if __name__ == "__main__":

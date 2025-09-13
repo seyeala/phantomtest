@@ -1,0 +1,6 @@
+timestamp_format: "%Y-%m-%d %H:%M:%S.%f"
+csv_path: ao_output.csv
+columns:
+  - timestamp
+  - cDAQ1Mod1/ao0
+  - cDAQ1Mod1/ao1
