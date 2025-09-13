@@ -5,7 +5,7 @@ PhantomTest provides a minimal test harness for verifying connectivity to a vari
 ## Repository layout
 
 * `test_daqs.py` – imports DAQ vendor libraries (LabJack LJM, MCC UL, NI‑DAQmx) and reports whether each module is available.
-* `test_nidaqmx_devices.py` – enumerates NI‑DAQmx devices and prints the name and product type of each detected device.
+* `list_devices.py` – enumerates NI‑DAQmx devices and prints the name and product type of each detected device.
 * `test_device_names.py` – lists device names and product types using the NI‑DAQmx Python API.
 * `test_ai_all.py` – reads all analog input channels on a specified NI device, averaging a given number of samples at a specified frequency.
 * `requirements.txt` – Python dependencies needed for the scripts.
@@ -43,7 +43,7 @@ Execute the scripts from the repository root:
 * List NI‑DAQmx devices:
 
    ```bash
-   python test_nidaqmx_devices.py
+   python list_devices.py
    ```
 
 * Print device names and types:
