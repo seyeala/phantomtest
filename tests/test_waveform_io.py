@@ -99,3 +99,7 @@ async def test_waveform_io():
                 for t in tasks:
                     t.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
+
+
+if __name__ == "__main__":
+    asyncio.run(test_waveform_io())
