@@ -1,0 +1,4 @@
+timestamp_format: "%Y-%m-%d %H:%M:%S.%f"
+csv_path: ao_writer_output.csv
+columns:
+  - timestamp
