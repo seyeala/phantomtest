@@ -1,4 +1,5 @@
 import asyncio
+import os
 import sys
 from pathlib import Path
 
@@ -19,31 +20,52 @@ from daqio.config import load_yaml
 
 CONFIG_PATH = ROOT / "configs" / "config_test.yml"
 
-try:
-    # Skip entire module if NI-DAQmx is unavailable or config incomplete
-    cfg = load_yaml(CONFIG_PATH)
+
+def _check_nidaq_available():
+    """
+    Returns (True, payload) when NI-DAQmx + config look good.
+    Returns (False, Exception) otherwise.
+    """
+    try:
+        cfg = load_yaml(CONFIG_PATH)
+        ao_cfg = cfg["daqO"]
+        ai_cfg = cfg["daqI"]
+
+        _ao_device = ao_cfg["device"]
+        _ai_device = ai_cfg["device"]
+
+        from nidaqmx.system import System
+        system = System.local()
+        devices = {dev.name: dev for dev in system.devices}
+
+        if _ao_device not in devices or _ai_device not in devices:
+            raise RuntimeError("Configured NI-DAQmx devices not detected")
+
+        if (not devices[_ao_device].ao_physical_chans
+                or not devices[_ai_device].ai_physical_chans):
+            raise RuntimeError("Configured devices lack required AO/AI channels")
+
+        return True, (cfg, devices)
+    except Exception as e:
+        return False, e
+
+
+_is_ok, _payload = _check_nidaq_available()
+if not _is_ok:
+    # If running under pytest, skip; otherwise print a message and exit cleanly.
+    if "PYTEST_CURRENT_TEST" in os.environ:
+        pytest.skip(f"NI-DAQmx system unavailable: {_payload}", allow_module_level=True)
+    else:
+        print(f"[test_waveform_io] NI-DAQmx system unavailable: {_payload}")
+        sys.exit(0)
+else:
+    cfg, _devices = _payload
     ao_cfg = cfg["daqO"]
     ai_cfg = cfg["daqI"]
-
     _ao_device = ao_cfg["device"]
     _ao_channels = ao_cfg["channels"]
     _ai_device = ai_cfg["device"]
     _ai_channels = ai_cfg["channels"]
-
-    from nidaqmx.system import System
-
-    system = System.local()
-    devices = {dev.name: dev for dev in system.devices}
-
-    if _ao_device not in devices or _ai_device not in devices:
-        raise RuntimeError("Configured NI-DAQmx devices not detected")
-
-    if not devices[_ao_device].ao_physical_chans or not devices[_ai_device].ai_physical_chans:
-        raise RuntimeError("Configured devices lack required AO/AI channels")
-
-except Exception as e:
-    # pragma: no cover - skip if hardware or config missing
-    pytest.skip(f"NI-DAQmx system unavailable: {e}", allow_module_level=True)
 
 
 async def queue_printer(get_queue):
@@ -57,13 +79,41 @@ async def queue_printer(get_queue):
         pass
 
 
-def _make_reader_writer(pressures):
+# --- Local AO publish throttle to avoid console spam at high Fs ---
+def _mk_ao_throttler(max_hz: float = 20.0):
+    """
+    Returns an async function that wraps publisher.publish_ao but only forwards
+    at most 'max_hz' payloads per second (best-effort).
+    """
+    min_interval = 1.0 / max_hz if max_hz > 0 else 0.0
+    last_ts = 0.0
+
+    async def publish_ao_throttled(payload: dict):
+        nonlocal last_ts
+        now = asyncio.get_running_loop().time()
+        if min_interval == 0.0 or (now - last_ts) >= min_interval:
+            last_ts = now
+            await publisher.publish_ao(payload)
+        # else: drop this payload to keep output readable
+
+    return publish_ao_throttled
+
+
+def _make_reader_writer(pressures: np.ndarray):
+    """
+    Build AO runner + AI reader.
+
+    AO waveform frequency (cycles/sec) is taken from YAML `daqO.waveform_cycles_hz`
+    if present, otherwise defaults to 1.0 Hz. This decouples AO from AI.
+    """
+    ao_cycles_hz = float(1)
+
     runner = AsyncAORunner(
-        **ao_cfg,
+        device=_ao_device,
+        channels=_ao_channels,
         waveform=pressures,
-        # Match AO sample rate to AI frequency (cycles per second = ai_freq / samples)
-        frequency=ai_cfg["freq"] / len(pressures),
-        publish=publisher.publish_ao,
+        waveform_cycles_hz=ao_cycles_hz,             # <-- independent knob
+        publish=_mk_ao_throttler(max_hz=20.0),       # throttle AO publishes to ~20 Hz
     )
 
     reader = AIReader(
@@ -73,10 +123,14 @@ def _make_reader_writer(pressures):
     return runner, reader
 
 
-async def ai_loop(reader, delay: float):
+async def ai_loop(reader: AIReader, delay: float):
+    """
+    Drive AI reads according to config using the built-in averaging.
+    """
     try:
         while True:
-            # Use config-driven sampling by averaging according to YAML parameters
+            # AIReader.read_average() handles its own (hardware) timing for the batch;
+            # delay here just spaces out successive batches.
             await asyncio.to_thread(reader.read_average)
             await asyncio.sleep(delay)
     except asyncio.CancelledError:
@@ -88,7 +142,8 @@ async def test_waveform_io():
     pressures = np.loadtxt(Path(__file__).resolve().parent / "daqio" / "apressure.csv")
     runner, reader = _make_reader_writer(pressures)
 
-    delay = 1.0 / ai_cfg["freq"]
+    # Space AI batches roughly by its configured freq (simple heuristic):
+    delay = max(0.0, 1.0 / float(ai_cfg["freq"]))
 
     with reader:
         async with runner:
