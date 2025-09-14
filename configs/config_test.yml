@@ -3,7 +3,7 @@ daqI:
   channels:
     - Dev1/ai0
     - Dev1/ai1
-  freq: 10000
+  freq: 100
   averages: 10
   omissions: 100  # number of sample intervals to skip between reads
   terminal: RSE
