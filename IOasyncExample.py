@@ -8,6 +8,7 @@ equipment.  Always use the ``daqO`` section for any AO tasks.
 """
 
 import asyncio
+import logging
 
 from daqio.daqO import write_random
 from daqio.daqI import load_config as load_ai_config, setup_task, read_average
@@ -62,4 +63,5 @@ async def main():
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     asyncio.run(main())

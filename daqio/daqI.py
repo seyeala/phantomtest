@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import logging
 import time
 from datetime import datetime
 from dataclasses import dataclass
@@ -46,6 +47,8 @@ from .config import (
     load_output_config,
 )
 from .publisher import publish_ai
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -235,7 +238,7 @@ def read_average(
         if not isinstance(vals, list):
             vals = [vals]
         for ch, val in zip(config["channels"], vals):
-            print(f"{ts} {ch}: {val:.6f} V")
+            logger.debug(f"{ts} {ch}: {val:.6f} V")
         log.append(
             {
                 "timestamp": ts,
@@ -250,7 +253,7 @@ def read_average(
 
     channel_values = {ch: float(val) for ch, val in zip(config["channels"], means)}
     for ch, val in channel_values.items():
-        print(f"{ch}: {val:.6f} V")
+        logger.info(f"{ch}: {val:.6f} V")
 
     ts = datetime.now().strftime(ts_format)
     payload = {"timestamp": ts, "channel_values": channel_values}
@@ -272,6 +275,7 @@ def read_average(
 def main(argv: Optional[Iterable[str]] = None) -> Dict[str, Any]:
     """Command-line entry point."""
 
+    logging.basicConfig(level=logging.INFO)
     cfg = parse_args_with_config("configs/config_test.yml", argv=argv)
     with setup_task(cfg) as task:
         read_average(task, cfg)
