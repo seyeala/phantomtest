@@ -50,7 +50,7 @@ def test_read_average_publish(monkeypatch):
     monkeypatch.setattr(daqI.time, "sleep", lambda s: None)
     cfg = {"freq": 1.0, "averages": 1, "omissions": 0, "channels": ["c1", "c2"]}
     task = DummyTask([1.0, 2.0])
-    channel_values, log = read_average(task, cfg)
+    channel_values, log = read_average(task, cfg, log_samples=True)
     assert channel_values == {"c1": 1.0, "c2": 2.0}
     assert captured["data"]["channel_values"] == {"c1": 1.0, "c2": 2.0}
     assert captured["data"]["timestamp"].isdigit()
