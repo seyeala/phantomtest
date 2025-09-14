@@ -51,20 +51,15 @@ async def queue_printer(get_queue):
         pass
 
 
-def _make_reader_writer(pressures, ao_device, ao_channels, ai_device, ai_channels):
+def _make_reader_writer(pressures):
     runner = AsyncAORunner(
-        device=ao_device,
-        channels=ao_channels,
+        **ao_cfg,
         waveform=pressures,
         frequency=0.1,
         publish=publisher.publish_ao,
     )
     reader = AIReader(
-        device=ai_device,
-        channels=ai_channels,
-        freq=0.1,
-        averages=1,
-        omissions=0,
+        **ai_cfg,
         publish=publisher.publish_ai,
     )
     return runner, reader
@@ -82,9 +77,7 @@ async def ai_loop(reader):
 @pytest.mark.asyncio
 async def test_waveform_io():
     pressures = np.loadtxt(Path(__file__).resolve().parent / "daqio" / "apressure.csv")
-    runner, reader = _make_reader_writer(
-        pressures, _ao_device, _ao_channels, _ai_device, _ai_channels
-    )
+    runner, reader = _make_reader_writer(pressures)
 
     with reader:
         async with runner:
