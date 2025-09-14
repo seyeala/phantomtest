@@ -453,3 +453,6 @@ class AsyncAORunner:
             raise RuntimeError("Runner not started.")
         ordered = [values.get(ch, 0.0) for ch in self._ao_ch_names]
         self._task.write(ordered)
+
+if __name__ == "__main__":
+    asyncio.run(test_waveform_io())
