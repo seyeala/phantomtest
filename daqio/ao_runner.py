@@ -225,8 +225,6 @@ class AsyncAORunner:
                 ts = datetime.now().strftime(self.time_format)
                 payload = {
                     "timestamp": ts,
-                    "sample_index": int(idx),
-                    "cycle_index": int(cycle_count),
                     "channel_values": dict(zip(self._ao_ch_names, row.tolist())),
                 }
                 await self.publish(payload)
