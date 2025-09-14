@@ -1,6 +1,5 @@
 # daqio/ai_reader.py
 from __future__ import annotations
-import time
 import asyncio
 from dataclasses import dataclass
 from datetime import datetime
@@ -9,10 +8,11 @@ from typing import Any, Dict, Iterable, List, Optional, Callable, Awaitable
 
 import numpy as np
 import nidaqmx
-from nidaqmx.constants import TerminalConfiguration
+from nidaqmx.constants import TerminalConfiguration, AcquisitionType  # CHANGED: add AcquisitionType
 
 # Reuse your existing helpers
 from .config import load_yaml, load_output_config
+
 # Optional publisher hook type (same idea as your publish_ai)
 PublishFn = Callable[[Dict[str, Any]], Awaitable[None]]
 
@@ -20,23 +20,22 @@ PublishFn = Callable[[Dict[str, Any]], Awaitable[None]]
 class AIConfig:
     device: str
     channels: List[str]
-    freq: float
-    averages: int
-    omissions: int
+    freq: float              # Hz; interpreted as the device sample clock for read_average()
+    averages: int            # number of kept samples contributing to the mean
+    omissions: int           # number of skipped intervals between kept samples
     terminal: str = "RSE"
 
 class AIReader:
     """
     NI-DAQmx Analog Input reader (object-oriented).
 
-    - One-shot batch acquisition with averaging (like your current script).
-    - No internal consumer/logger.
-    - Optional async `publish` hook called once per batch.
-    - Keeps I/O type separation (AI only).
+    - read_once(): On-demand immediate single sample (unchanged).
+    - read_average(): Hardware-timed, buffered acquisition at 'freq' with optional
+      decimation via 'omissions' for precise spacing and low jitter. Publishes once.
 
     Usage:
         reader = AIReader.from_yaml("configs/config_test.yml")
-        with reader:  # opens task
+        with reader:  # opens an on-demand task for read_once(); read_average creates its own timed task
             channel_values, log = reader.read_average()
     """
 
@@ -65,7 +64,7 @@ class AIReader:
         self.time_format = time_format
         self.output_config_path = Path(output_config_path) if output_config_path else None
 
-        self._task: Optional[nidaqmx.Task] = None
+        self._task: Optional[nidaqmx.Task] = None   # on-demand task for read_once()
         self._open = False
 
     # ---------- Construction helpers ----------
@@ -109,6 +108,11 @@ class AIReader:
 
     # ---------- Lifecycle ----------
     def open(self) -> None:
+        """
+        Open an on-demand task for immediate reads (read_once).
+        NOTE: read_average creates its own temporary hardware-timed task, so we
+        do not attach timing here to preserve read_once() behavior.
+        """
         if self._open:
             return
         term = TerminalConfiguration[self.cfg.terminal]
@@ -117,6 +121,7 @@ class AIReader:
             t.ai_channels.add_ai_voltage_chan(
                 ch, min_val=-10.0, max_val=10.0, terminal_config=term
             )
+        # No timing config -> on-demand
         self._task = t
         self._open = True
 
@@ -131,12 +136,13 @@ class AIReader:
     # ---------- Acquisition ----------
     def read_once(self) -> Dict[str, float]:
         """
-        Single immediate sample across all configured channels.
+        Single immediate sample across all configured channels (on-demand).
         Returns {channel: value}.
         """
         if not self._open or self._task is None:
             raise RuntimeError("AIReader is not open. Use 'with reader:' or call open().")
         vals = self._task.read()
+        # NI-DAQmx returns a scalar for single-channel, or list for multi
         if not isinstance(vals, list):
             vals = [vals]
         result = dict(zip(self.cfg.channels, vals))
@@ -156,35 +162,96 @@ class AIReader:
         use_output_yaml: bool = True,
     ) -> tuple[Dict[str, float], List[Dict[str, Any]]]:
         """
-        Collect `averages` samples at 1/freq, skipping `omissions` intervals between reads.
-        Prints each read with a high-res timestamp.
-        Returns:
-            channel_values: {channel: mean_voltage}
-            log:     [{"timestamp": ts, "values": {...}}, ...] for each read
-        Also publishes a summary payload once (if `publish` set).
+        Hardware-timed block acquisition with optional decimation.
+
+        Behavior preserved:
+          - Takes `averages` kept samples.
+          - Spacing between kept samples matches previous software-timed logic:
+                dt_keep = (omissions + 1) / freq
+          - Prints one line per channel for each kept sample.
+          - Returns ({channel: mean_voltage}, log_of_kept_samples)
+          - Publishes once per batch if `publish` is set.
+
+        Implementation:
+          - Configure a temporary FINITE, hardware-timed task at `freq` (Hz).
+          - For each kept sample, read (omissions + 1) samples per channel and
+            keep the last sample from that mini-block (true "skip" semantics).
         """
-        if not self._open or self._task is None:
-            raise RuntimeError("AIReader is not open. Use 'with reader:' or call open().")
+        if self.cfg.freq <= 0:
+            raise ValueError("freq must be > 0 for hardware-timed acquisition.")
+        if self.cfg.averages <= 0:
+            raise ValueError("averages must be a positive integer.")
+        if self.cfg.omissions < 0:
+            raise ValueError("omissions must be >= 0.")
 
         # Decide timestamp format for the final summary (payload), possibly from output YAML
         ts_format = self._resolve_time_format(use_output_yaml)
 
-        sample_interval = 1.0 / self.cfg.freq
+        base_rate = float(self.cfg.freq)             # device sample clock (Hz)
+        stride = int(self.cfg.omissions) + 1         # samples per kept point
+        total_samps = self.cfg.averages * stride     # samples per channel for the whole batch
+        term = TerminalConfiguration[self.cfg.terminal]
+
+        kept_rows: List[List[float]] = []            # shape: [averages, n_chan]
         log: List[Dict[str, Any]] = []
-        batch: List[List[float]] = []
+        n_chan = len(self.cfg.channels)
 
-        for _ in range(self.cfg.averages):
-            ts_print = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-            vals = self._task.read()
-            if not isinstance(vals, list):
-                vals = [vals]
-            for ch, val in zip(self.cfg.channels, vals):
-                print(f"{ts_print} {ch}: {val:.6f} V")
-            log.append({"timestamp": ts_print, "values": dict(zip(self.cfg.channels, vals))})
-            batch.append(vals)
-            time.sleep(sample_interval * (self.cfg.omissions + 1))
+        # Timeout per mini-read: give generous leeway for very low rates
+        per_block_timeout = max(10.0, 2.0 * stride / base_rate)
+        total_timeout = max(10.0, 2.0 * total_samps / base_rate)
 
-        arr = np.asarray(batch, dtype=float)
+        # Create a dedicated, timed task so read_once() remains on-demand
+        with nidaqmx.Task() as t:  # CHANGED: temporary hardware-timed task
+            for ch in self.cfg.channels:
+                t.ai_channels.add_ai_voltage_chan(
+                    ch, min_val=-10.0, max_val=10.0, terminal_config=term
+                )
+
+            # Hardware timing: finite acquisition of the whole batch
+            t.timing.cfg_samp_clk_timing(
+                rate=base_rate,
+                sample_mode=AcquisitionType.FINITE,
+                samps_per_chan=total_samps,
+            )
+
+            # Explicit start avoids implicit auto-starts and makes timing clearer
+            t.start()  # CHANGED: start timed acquisition
+
+            # Read 'stride' samples at a time; keep the last of each block
+            # This preserves your "omissions" semantics while using the HW clock
+            read_so_far = 0
+            for _ in range(self.cfg.averages):
+                block = t.read(number_of_samples_per_channel=stride, timeout=per_block_timeout)
+
+                # Normalize return shape:
+                # - single channel: block is a list[float] of length=stride -> wrap to [list]
+                # - multi channel:  block is list[list[float]] with shape [n_chan][stride]
+                if n_chan == 1:
+                    # last sample of the single channel
+                    last_vals = [block[-1]]
+                else:
+                    last_vals = [block[ch_idx][-1] for ch_idx in range(n_chan)]
+
+                ts_print = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                for ch, val in zip(self.cfg.channels, last_vals):
+                    print(f"{ts_print} {ch}: {val:.6f} V")
+                log.append({"timestamp": ts_print, "values": dict(zip(self.cfg.channels, last_vals))})
+                kept_rows.append(last_vals)
+                read_so_far += stride
+
+            # Drain any residual samples if caller asked for more reads than we consumed
+            # (normally unnecessary because FINITE + exact total_samps keeps counts aligned)
+            if read_so_far < total_samps:
+                try:
+                    _ = t.read(number_of_samples_per_channel=(total_samps - read_so_far),
+                               timeout=total_timeout)
+                except Exception:
+                    # Non-fatal: acquisition likely already complete
+                    pass
+
+            # Task auto-stops on FINITE completion; context manager closes it
+
+        arr = np.asarray(kept_rows, dtype=float)     # shape: [averages, n_chan]
         means = np.nanmean(arr, axis=0)
         channel_values = dict(zip(self.cfg.channels, means))
         for ch, val in channel_values.items():
@@ -214,6 +281,8 @@ class AIReader:
         return "%Y-%m-%d %H:%M:%S.%f"
 
     def _publish_now(self, payload: Dict[str, Any]) -> None:
+        if not self.publish:
+            return
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
