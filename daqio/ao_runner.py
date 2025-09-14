@@ -21,6 +21,9 @@ class AsyncAORunner:
       - Random mode (no waveform provided): writes random values every interval.
       - Waveform mode (waveform provided): plays the waveform at
         sample_rate = frequency * len(waveform), repeating for `cycles` (0=forever).
+
+    Published payloads follow the same schema as analog-input publishing:
+    {"timestamp": str, "channel_values": {channel: value}}.
     """
 
     def __init__(

@@ -33,6 +33,8 @@ class AIReader:
     - No internal consumer/logger.
     - Optional async `publish` hook called once per batch.
     - Keeps I/O type separation (AI only).
+    - Published payloads share the same schema as analog output:
+      {"timestamp": str, "channel_values": {channel: value}}
 
     Usage:
         reader = AIReader.from_yaml("configs/config_test.yml")
@@ -129,26 +131,26 @@ class AIReader:
         self._open = False
 
     # ---------- Acquisition ----------
-    def read_once(self) -> Dict[str, float]:
+    def read_once(self) -> Dict[str, Any]:
         """
         Single immediate sample across all configured channels.
-        Returns {channel: value}.
+        Returns the same payload schema used for publishing and AO:
+        {"timestamp": ts, "channel_values": {channel: value}}.
         """
         if not self._open or self._task is None:
             raise RuntimeError("AIReader is not open. Use 'with reader:' or call open().")
         vals = self._task.read()
         if not isinstance(vals, list):
             vals = [vals]
-        result = dict(zip(self.cfg.channels, vals))
+        channel_values = dict(zip(self.cfg.channels, vals))
+        ts_format = self._resolve_time_format(use_output_yaml=False)
+        ts_pub = datetime.now().strftime(ts_format)
+        payload = {"timestamp": ts_pub, "channel_values": channel_values}
 
-        # Optionally publish the single-shot result
         if self.publish:
-            ts_format = self._resolve_time_format(use_output_yaml=False)
-            ts_pub = datetime.now().strftime(ts_format)
-            payload = {"timestamp": ts_pub, "channel_values": result}
             self._publish_now(payload)
 
-        return result
+        return payload
 
     def read_average(
         self,
