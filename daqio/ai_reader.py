@@ -145,7 +145,8 @@ class AIReader:
         # NI-DAQmx returns a scalar for single-channel, or list for multi
         if not isinstance(vals, list):
             vals = [vals]
-        result = dict(zip(self.cfg.channels, vals))
+        # Ensure values are plain Python floats
+        result = {ch: float(val) for ch, val in zip(self.cfg.channels, vals)}
 
         # Optionally publish the single-shot result
         if self.publish:
@@ -235,7 +236,12 @@ class AIReader:
                 ts_print = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
                 for ch, val in zip(self.cfg.channels, last_vals):
                     print(f"{ts_print} {ch}: {val:.6f} V")
-                log.append({"timestamp": ts_print, "values": dict(zip(self.cfg.channels, last_vals))})
+                log.append(
+                    {
+                        "timestamp": ts_print,
+                        "channel_values": {ch: float(v) for ch, v in zip(self.cfg.channels, last_vals)},
+                    }
+                )
                 kept_rows.append(last_vals)
                 read_so_far += stride
 
@@ -253,7 +259,7 @@ class AIReader:
 
         arr = np.asarray(kept_rows, dtype=float)     # shape: [averages, n_chan]
         means = np.nanmean(arr, axis=0)
-        channel_values = dict(zip(self.cfg.channels, means))
+        channel_values = {ch: float(val) for ch, val in zip(self.cfg.channels, means)}
         for ch, val in channel_values.items():
             print(f"{ch}: {val:.6f} V")
 
