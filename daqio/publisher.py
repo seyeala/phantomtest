@@ -1,21 +1,30 @@
 """Manage queues and CSV writers for analog I/O.
 
-Public API: publish_ao, publish_ai, start_ao_consumer, start_ai_consumer.
+Public API: publish_ao, publish_ai, start_ao_consumer, start_ai_consumer,
+            get_latest_ao, get_latest_ai.
 """
 import asyncio
 from pathlib import Path
 import csv
-from typing import Dict, List
+import os
+from typing import Dict, List, Optional
 
-_ao_queue: asyncio.Queue | None = None
-_ai_queue: asyncio.Queue | None = None
+# ---- queue sizing (avoid unbounded growth) ----
+_MAX = int(os.getenv("DAQIO_QUEUE_MAX", "1024"))
+
+_ao_queue: Optional[asyncio.Queue] = None
+_ai_queue: Optional[asyncio.Queue] = None
+
+# ---- latest snapshots for instant access (same process) ----
+_latest_ai: Optional[Dict] = None
+_latest_ao: Optional[Dict] = None
 
 
 def _get_ao_queue() -> asyncio.Queue:
     """Return the singleton queue for analog-output messages."""
     global _ao_queue
     if _ao_queue is None:
-        _ao_queue = asyncio.Queue()
+        _ao_queue = asyncio.Queue(maxsize=_MAX)
     return _ao_queue
 
 
@@ -23,18 +32,45 @@ def _get_ai_queue() -> asyncio.Queue:
     """Return the singleton queue for analog-input messages."""
     global _ai_queue
     if _ai_queue is None:
-        _ai_queue = asyncio.Queue()
+        _ai_queue = asyncio.Queue(maxsize=_MAX)
     return _ai_queue
 
 
+def get_latest_ai() -> Dict | None:
+    """Return the most recent AI payload (do not mutate)."""
+    return _latest_ai
+
+
+def get_latest_ao() -> Dict | None:
+    """Return the most recent AO payload (do not mutate)."""
+    return _latest_ao
+
+
+async def _put_drop_oldest(q: asyncio.Queue, item: Dict) -> None:
+    """Non-blocking put with drop-oldest if queue is full (keeps DAQ loops from stalling)."""
+    try:
+        q.put_nowait(item)
+    except asyncio.QueueFull:
+        try:
+            _ = q.get_nowait()
+            q.task_done()
+        except asyncio.QueueEmpty:
+            pass
+        q.put_nowait(item)
+
+
 async def publish_ao(data: Dict) -> None:
-    """Publish analog-output data to the queue."""
-    await _get_ao_queue().put(data)
+    """Publish analog-output data to the queue and update latest snapshot."""
+    global _latest_ao
+    _latest_ao = data
+    await _put_drop_oldest(_get_ao_queue(), data)
 
 
 async def publish_ai(result: Dict) -> None:
-    """Publish analog-input averaging results to the queue."""
-    await _get_ai_queue().put(result)
+    """Publish analog-input averaging results to the queue and update latest snapshot."""
+    global _latest_ai
+    _latest_ai = result
+    await _put_drop_oldest(_get_ai_queue(), result)
 
 
 async def _ao_consumer(csv_path: str, columns: List[str]) -> None:
