@@ -139,7 +139,16 @@ class AIReader:
         vals = self._task.read()
         if not isinstance(vals, list):
             vals = [vals]
-        return dict(zip(self.cfg.channels, vals))
+        result = dict(zip(self.cfg.channels, vals))
+
+        # Optionally publish the single-shot result
+        if self.publish:
+            ts_format = self._resolve_time_format(use_output_yaml=False)
+            ts_pub = datetime.now().strftime(ts_format)
+            payload = {"timestamp": ts_pub, "results": result}
+            self._publish_now(payload)
+
+        return result
 
     def read_average(
         self,
