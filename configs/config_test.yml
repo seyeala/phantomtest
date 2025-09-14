@@ -16,4 +16,3 @@ daqO:
   high: 3.0
   interval: 0.5
   seed: 1234
-  waveform_cycles_hz: 1.0   # <-- independent AO waveform frequency (cycles per second)
