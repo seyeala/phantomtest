@@ -37,7 +37,7 @@ class AIReader:
     Usage:
         reader = AIReader.from_yaml("configs/config_test.yml")
         with reader:  # opens task
-            results, log = reader.read_average()
+            channel_values, log = reader.read_average()
     """
 
     def __init__(
@@ -145,7 +145,7 @@ class AIReader:
         if self.publish:
             ts_format = self._resolve_time_format(use_output_yaml=False)
             ts_pub = datetime.now().strftime(ts_format)
-            payload = {"timestamp": ts_pub, "results": result}
+            payload = {"timestamp": ts_pub, "channel_values": result}
             self._publish_now(payload)
 
         return result
@@ -159,7 +159,7 @@ class AIReader:
         Collect `averages` samples at 1/freq, skipping `omissions` intervals between reads.
         Prints each read with a high-res timestamp.
         Returns:
-            results: {channel: mean_voltage}
+            channel_values: {channel: mean_voltage}
             log:     [{"timestamp": ts, "values": {...}}, ...] for each read
         Also publishes a summary payload once (if `publish` set).
         """
@@ -186,17 +186,17 @@ class AIReader:
 
         arr = np.asarray(batch, dtype=float)
         means = np.nanmean(arr, axis=0)
-        results = dict(zip(self.cfg.channels, means))
-        for ch, val in results.items():
+        channel_values = dict(zip(self.cfg.channels, means))
+        for ch, val in channel_values.items():
             print(f"{ch}: {val:.6f} V")
 
         # Publish once per batch (optional)
         if self.publish:
             ts_pub = datetime.now().strftime(ts_format)
-            payload = {"timestamp": ts_pub, "results": results}
+            payload = {"timestamp": ts_pub, "channel_values": channel_values}
             self._publish_now(payload)
 
-        return results, log
+        return channel_values, log
 
     # ---------- Utilities ----------
     def _resolve_time_format(self, use_output_yaml: bool) -> str:

@@ -13,7 +13,7 @@ async def _run_consumer(tmp_path: Path):
     csv_file = tmp_path / "ai.csv"
     columns = ["timestamp", "c1", "c2"]
     task = publisher.start_ai_consumer(str(csv_file), columns)
-    payload = {"timestamp": "t0", "results": {"c1": 1, "c2": 2}}
+    payload = {"timestamp": "t0", "channel_values": {"c1": 1, "c2": 2}}
     await publisher.publish_ai(payload)
     await publisher._get_ai_queue().join()
     task.cancel()
@@ -51,5 +51,5 @@ def test_read_average_publish(monkeypatch):
     cfg = {"freq": 1.0, "averages": 1, "omissions": 0, "channels": ["c1", "c2"]}
     task = DummyTask([1.0, 2.0])
     read_average(task, cfg)
-    assert captured["data"]["results"] == {"c1": 1.0, "c2": 2.0}
+    assert captured["data"]["channel_values"] == {"c1": 1.0, "c2": 2.0}
     assert captured["data"]["timestamp"].isdigit()

@@ -66,11 +66,11 @@ async def publish_ao(data: Dict) -> None:
     await _put_drop_oldest(_get_ao_queue(), data)
 
 
-async def publish_ai(result: Dict) -> None:
-    """Publish analog-input averaging results to the queue and update latest snapshot."""
+async def publish_ai(data: Dict) -> None:
+    """Publish analog-input channel values to the queue and update latest snapshot."""
     global _latest_ai
-    _latest_ai = result
-    await _put_drop_oldest(_get_ai_queue(), result)
+    _latest_ai = data
+    await _put_drop_oldest(_get_ai_queue(), data)
 
 
 async def _ao_consumer(csv_path: str, columns: List[str]) -> None:
@@ -107,7 +107,7 @@ async def _ai_consumer(csv_path: str, columns: List[str]) -> None:
                 if col == "timestamp":
                     row[col] = item.get("timestamp")
                 else:
-                    row[col] = item.get("results", {}).get(col)
+                    row[col] = item.get("channel_values", {}).get(col)
             writer.writerow(row)
             fh.flush()
             queue.task_done()

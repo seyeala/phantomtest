@@ -23,7 +23,7 @@ Run the module from the command line::
     python -m daqio.daqI --config configs/config_test.yml
 
 The script will acquire the requested number of samples from each
-channel, compute the mean voltage per channel and print the results.
+channel, compute the mean voltage per channel and print the channel values.
 """
 
 from __future__ import annotations
@@ -241,12 +241,12 @@ def read_average(
     arr = np.asarray(batch, dtype=float)
     means = np.nanmean(arr, axis=0)
 
-    results = dict(zip(config["channels"], means))
-    for ch, val in results.items():
+    channel_values = dict(zip(config["channels"], means))
+    for ch, val in channel_values.items():
         print(f"{ch}: {val:.6f} V")
 
     ts = datetime.now().strftime(ts_format)
-    payload = {"timestamp": ts, "results": results}
+    payload = {"timestamp": ts, "channel_values": channel_values}
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -254,7 +254,7 @@ def read_average(
     else:
         loop.create_task(publish_ai(payload))
 
-    return results, log
+    return channel_values, log
 
 
 # ---------------------------------------------------------------------------
