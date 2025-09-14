@@ -19,10 +19,12 @@ from daqio.config import load_yaml
 
 CONFIG_PATH = ROOT / "configs" / "config_test.yml"
 
-try:  # Skip entire module if NI-DAQmx is unavailable or config incomplete
+try:
+    # Skip entire module if NI-DAQmx is unavailable or config incomplete
     cfg = load_yaml(CONFIG_PATH)
     ao_cfg = cfg["daqO"]
     ai_cfg = cfg["daqI"]
+
     _ao_device = ao_cfg["device"]
     _ao_channels = ao_cfg["channels"]
     _ai_device = ai_cfg["device"]
@@ -32,11 +34,15 @@ try:  # Skip entire module if NI-DAQmx is unavailable or config incomplete
 
     system = System.local()
     devices = {dev.name: dev for dev in system.devices}
+
     if _ao_device not in devices or _ai_device not in devices:
         raise RuntimeError("Configured NI-DAQmx devices not detected")
+
     if not devices[_ao_device].ao_physical_chans or not devices[_ai_device].ai_physical_chans:
         raise RuntimeError("Configured devices lack required AO/AI channels")
-except Exception as e:  # pragma: no cover - skip if hardware or config missing
+
+except Exception as e:
+    # pragma: no cover - skip if hardware or config missing
     pytest.skip(f"NI-DAQmx system unavailable: {e}", allow_module_level=True)
 
 
@@ -56,9 +62,10 @@ def _make_reader_writer(pressures):
         **ao_cfg,
         waveform=pressures,
         # Match AO sample rate to AI frequency (cycles per second = ai_freq / samples)
-        frequency=1 / len(pressures),
+        frequency=ai_cfg["freq"] / len(pressures),
         publish=publisher.publish_ao,
     )
+
     reader = AIReader(
         **ai_cfg,
         publish=publisher.publish_ai,
@@ -80,6 +87,7 @@ async def ai_loop(reader, delay: float):
 async def test_waveform_io():
     pressures = np.loadtxt(Path(__file__).resolve().parent / "daqio" / "apressure.csv")
     runner, reader = _make_reader_writer(pressures)
+
     delay = 1.0 / ai_cfg["freq"]
 
     with reader:
