@@ -241,7 +241,7 @@ def read_average(
     arr = np.asarray(batch, dtype=float)
     means = np.nanmean(arr, axis=0)
 
-    channel_values = dict(zip(config["channels"], means))
+    channel_values = {ch: float(val) for ch, val in zip(config["channels"], means)}
     for ch, val in channel_values.items():
         print(f"{ch}: {val:.6f} V")
 
