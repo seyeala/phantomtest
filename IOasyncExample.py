@@ -16,7 +16,7 @@ from daqio import publisher
 
 
 async def ai_loop(cfg: dict):
-    """Continuously read analog inputs and publish results."""
+    """Continuously read analog inputs and publish channel values."""
     with setup_task(cfg) as task:
         while True:
             await asyncio.to_thread(read_average, task, cfg)

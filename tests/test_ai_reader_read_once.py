@@ -32,9 +32,9 @@ def test_read_once_publish():
     reader._task = DummyTask([1.0, 2.0])  # type: ignore[assignment]
     reader._open = True
 
-    results = reader.read_once()
+    channel_values = reader.read_once()
 
-    assert results == {"c1": 1.0, "c2": 2.0}
-    assert captured["data"]["results"] == {"c1": 1.0, "c2": 2.0}
+    assert channel_values == {"c1": 1.0, "c2": 2.0}
+    assert captured["data"]["channel_values"] == {"c1": 1.0, "c2": 2.0}
     assert captured["data"]["timestamp"]
 

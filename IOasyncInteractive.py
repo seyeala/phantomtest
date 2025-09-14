@@ -1,7 +1,7 @@
 """Interactive asynchronous analog I/O demo with keypress exit.
 
 Continuously writes random analog outputs while reading analog inputs and
-publishing results. Press Enter to stop the demo gracefully.
+publishing channel values. Press Enter to stop the demo gracefully.
 """
 
 import asyncio
