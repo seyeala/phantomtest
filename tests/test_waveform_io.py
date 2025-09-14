@@ -55,7 +55,8 @@ def _make_reader_writer(pressures):
     runner = AsyncAORunner(
         **ao_cfg,
         waveform=pressures,
-        frequency=0.1,
+        # Match AO sample rate to AI frequency (cycles per second = ai_freq / samples)
+        frequency=ai_cfg["freq"] / len(pressures),
         publish=publisher.publish_ao,
     )
     reader = AIReader(
@@ -65,11 +66,12 @@ def _make_reader_writer(pressures):
     return runner, reader
 
 
-async def ai_loop(reader):
+async def ai_loop(reader, delay: float):
     try:
         while True:
-            await asyncio.to_thread(reader.read_once)
-            await asyncio.sleep(10.0)
+            # Use config-driven sampling by averaging according to YAML parameters
+            await asyncio.to_thread(reader.read_average)
+            await asyncio.sleep(delay)
     except asyncio.CancelledError:
         pass
 
@@ -78,11 +80,12 @@ async def ai_loop(reader):
 async def test_waveform_io():
     pressures = np.loadtxt(Path(__file__).resolve().parent / "daqio" / "apressure.csv")
     runner, reader = _make_reader_writer(pressures)
+    delay = 1.0 / ai_cfg["freq"]
 
     with reader:
         async with runner:
             tasks = [
-                asyncio.create_task(ai_loop(reader)),
+                asyncio.create_task(ai_loop(reader, delay)),
                 asyncio.create_task(queue_printer(publisher._get_ao_queue)),
                 asyncio.create_task(queue_printer(publisher._get_ai_queue)),
             ]
