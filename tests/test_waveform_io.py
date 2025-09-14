@@ -31,7 +31,7 @@ class _SyncMapper:
         # Pin intercept to current system clock at start (UTC); caller can format later
         self.a_ns = int(datetime.now(timezone.utc).timestamp() * 1e9)
         self.mono0_ns = monotonic_ns()
-        # Initial slope from requested Fs
+        # Initial slope from requested/actual Fs
         self.b_ns_per_sample = int(round((1.0 / self.Fs) * 1e9))
         # Smoothing for drift (2% new, 98% old)
         self.alpha = 0.02
@@ -69,7 +69,11 @@ class AsyncAORunner:
     Modes:
       - Random mode (no waveform provided): writes random values every interval.
       - Waveform mode (waveform provided): plays the waveform at
-        sample_rate = frequency * len(waveform), repeating for `cycles` (0=forever).
+        sample_rate = waveform_cycles_hz * len(waveform), repeating for `cycles` (0=forever).
+
+    Key knob (decoupled from AI):
+      - waveform_cycles_hz (cycles per second), default 1.0; can be changed later via
+        set_waveform_cycles_hz(..., apply=True) to apply immediately (safe restart).
     """
 
     def __init__(
@@ -84,7 +88,8 @@ class AsyncAORunner:
         seed: Optional[int] = None,
         # Waveform mode params
         waveform: Optional[PerChanWave] = None,
-        frequency: float = 1.0,      # cycles per second (complete waveform repeats per second)
+        waveform_cycles_hz: Optional[float] = None,  # NEW: clearer public knob (default 1.0 if None)
+        frequency: float = 1.0,      # legacy alias; kept for backward compatibility
         cycles: int = 0,             # 0 = run forever
         # Common
         publish: Optional[PublishFn] = None,
@@ -101,7 +106,10 @@ class AsyncAORunner:
 
         # waveform-mode
         self.waveform = waveform
-        self.frequency = float(frequency)
+        if waveform_cycles_hz is not None:
+            self.frequency = float(waveform_cycles_hz)  # authoritative new knob
+        else:
+            self.frequency = float(frequency)           # legacy path; default 1.0
         self.cycles = int(cycles)
 
         # common
@@ -120,6 +128,24 @@ class AsyncAORunner:
         self._wf_matrix_T: Optional[np.ndarray] = None # (C, S) for DMA write
         self._sample_period: Optional[float] = None    # seconds between samples
         self._samples_per_cycle: Optional[int] = None
+
+    # ---------- simple, discoverable API for AO waveform frequency ----------
+    @property
+    def waveform_cycles_hz(self) -> float:
+        """Waveform frequency (cycles per second)."""
+        return self.frequency
+
+    async def set_waveform_cycles_hz(self, cycles_hz: float, apply: bool = False) -> None:
+        """
+        Update waveform cycles-per-second. If apply=True and the runner is active,
+        we stop/start to apply the new hardware rate.
+        """
+        await self.set_frequency(cycles_hz)
+        if apply and self._task is not None:
+            was_running = self._runner is not None
+            await self.stop(safe_zero=False)
+            if was_running:
+                await self.start()
 
     # ---------- lifecycle ----------
     async def start(self) -> None:
@@ -149,7 +175,7 @@ class AsyncAORunner:
             # Create task
             self._task = nidaqmx.Task()
             for ch in self._ao_ch_names:
-                # Keep the same range selection behavior as before for compatibility
+                # Conservative range selection: allow full ±10 V unless user bounds are tighter
                 self._task.ao_channels.add_ao_voltage_chan(
                     ch,
                     min_val=min(self.low, -10.0),
@@ -233,7 +259,7 @@ class AsyncAORunner:
 
         S = matrix.shape[0]
         if self.frequency <= 0.0:
-            raise ValueError("frequency must be > 0 when using waveform mode.")
+            raise ValueError("waveform_cycles_hz / frequency must be > 0 when using waveform mode.")
         sample_rate = self.frequency * S
         self._sample_period = 1.0 / sample_rate
         self._samples_per_cycle = S
@@ -277,9 +303,8 @@ class AsyncAORunner:
         try:
             await self._run_waveform_mode_hw()
         except Exception as e:
-            # Fallback for "big exception happens in the beginning"
-            # (e.g., misconfigured device, timing not supported, start failure, etc.)
-            warn = f"[AsyncAORunner] HW-timed AO failed early ({type(e).__name__}: {e}). Falling back to software-timed mode."
+            warn = (f"[AsyncAORunner] HW-timed AO failed early "
+                    f"({type(e).__name__}: {e}). Falling back to software-timed mode.")
             print(warn)
             await self._run_waveform_mode_software_fallback()
 
@@ -309,34 +334,31 @@ class AsyncAORunner:
         writer.write_many_sample(self._wf_matrix_T, timeout=10.0)
 
         # Anchors and mapping (system clock + monotonic for drift)
-        mapper_ready = False
-        try:
-            # Pin mapping to system time at start
-            mapper = _SyncMapper(Fs_actual=Fs_req, time_format=self.time_format)
-            self._task.start()
-            # Query coerced rate (actual)
-            Fs = float(self._task.timing.samp_clk_rate)
-            # Update mapper slope to the actual rate immediately
-            mapper.b_ns_per_sample = int(round((1.0 / Fs) * 1e9))
-            mapper_ready = True
-        except Exception:
-            # Don't leave the task partially started
-            raise
+        mapper = _SyncMapper(Fs_actual=Fs_req, time_format=self.time_format)
+        self._task.start()
+        # Query coerced rate (actual)
+        Fs = float(self._task.timing.samp_clk_rate)
+        # Update mapper slope to the actual rate immediately
+        mapper.b_ns_per_sample = int(round((1.0 / Fs) * 1e9))
+
+        # Helpful runtime log
+        print(f"[AsyncAORunner] AO waveform start: S={S}, cycles_hz_req={self.frequency:.6f}, "
+              f"samp_rate_req={Fs_req:.6f} Hz, samp_rate_act={Fs:.6f} Hz")
 
         # Lightweight alignment checks
         ppm_margin = 1000  # growth bound margin (0.1%)
         last_n = 0
         last_mono_ns = monotonic_ns()
         publishes_since_cal = 0
-        # To avoid busy spinning while still being per-sample faithful, we poll frequently
-        # and publish any samples that have been generated since the last poll.
+
+        # Per-sample publish (like your original), bounded to keep loop responsive
         while not self._stopping.is_set():
             # How many samples have actually gone out?
             n = int(self._task.out_stream.total_samp_per_chan_generated)
 
             # --- Alignment checks ---
             if n < last_n:
-                # Task likely restarted or error in driver; we won't attempt to "recover" silently.
+                # Task likely restarted or error in driver; abort to avoid inconsistent mapping
                 raise RuntimeError("AO sample counter decreased; task restart or device error.")
             mono_now_ns = monotonic_ns()
             dt = (mono_now_ns - last_mono_ns) / 1e9
@@ -353,10 +375,8 @@ class AsyncAORunner:
                 publishes_since_cal = 0
             last_mono_ns = mono_now_ns
 
-            # Publish every new sample between last_n and n (per-sample behavior like original)
+            # Publish every new sample between last_n and n
             if self.publish and n > last_n:
-                # Cap per-iteration to avoid pathological burst (keeps loop responsive)
-                # This does not drop samples; we just iterate this loop again quickly.
                 batch_limit = max(1, int(0.02 * Fs))  # ~20 ms worth at most per tick
                 target_n = n
                 cursor = last_n
@@ -384,12 +404,11 @@ class AsyncAORunner:
                     break
 
             # Light sleep to avoid busy spin; bounded by a fraction of sample period
-            # If Fs is very low, this is also fine (we'll publish per-sample as they appear).
             await asyncio.sleep(min(0.005, max(0.001, self._sample_period * 0.25)))
 
     async def _run_waveform_mode_software_fallback(self) -> None:
         """
-        Original software-timed loop (your previous behavior), kept intact for fallback.
+        Original software-timed loop (previous behavior), kept intact for fallback.
         """
         assert self._wf_matrix is not None and self._sample_period is not None and self._samples_per_cycle is not None
         S = self._samples_per_cycle
@@ -434,104 +453,3 @@ class AsyncAORunner:
             raise RuntimeError("Runner not started.")
         ordered = [values.get(ch, 0.0) for ch in self._ao_ch_names]
         self._task.write(ordered)
-import asyncio
-import sys
-from pathlib import Path
-
-import numpy as np
-import pytest
-
-# Ensure project root is on sys.path so "daqio" package is importable even
-# though this test module sits inside a directory named "tests/daqio" which
-# would otherwise shadow the real package.
-ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-from daqio import publisher
-from daqio.ao_runner import AsyncAORunner
-from daqio.ai_reader import AIReader
-from daqio.config import load_yaml
-
-CONFIG_PATH = ROOT / "configs" / "config_test.yml"
-
-try:  # Skip entire module if NI-DAQmx is unavailable or config incomplete
-    cfg = load_yaml(CONFIG_PATH)
-    ao_cfg = cfg["daqO"]
-    ai_cfg = cfg["daqI"]
-    _ao_device = ao_cfg["device"]
-    _ao_channels = ao_cfg["channels"]
-    _ai_device = ai_cfg["device"]
-    _ai_channels = ai_cfg["channels"]
-
-    from nidaqmx.system import System
-
-    system = System.local()
-    devices = {dev.name: dev for dev in system.devices}
-    if _ao_device not in devices or _ai_device not in devices:
-        raise RuntimeError("Configured NI-DAQmx devices not detected")
-    if not devices[_ao_device].ao_physical_chans or not devices[_ai_device].ai_physical_chans:
-        raise RuntimeError("Configured devices lack required AO/AI channels")
-except Exception as e:  # pragma: no cover - skip if hardware or config missing
-    pytest.skip(f"NI-DAQmx system unavailable: {e}", allow_module_level=True)
-
-
-async def queue_printer(get_queue):
-    q = get_queue()
-    try:
-        while True:
-            item = await q.get()
-            print(item)
-            q.task_done()
-    except asyncio.CancelledError:
-        pass
-
-
-def _make_reader_writer(pressures):
-    runner = AsyncAORunner(
-        **ao_cfg,
-        waveform=pressures,
-        # Match AO sample rate to AI frequency (cycles per second = ai_freq / samples)
-        frequency=1 / len(pressures),
-        publish=publisher.publish_ao,
-    )
-    reader = AIReader(
-        **ai_cfg,
-        publish=publisher.publish_ai,
-    )
-    return runner, reader
-
-
-async def ai_loop(reader, delay: float):
-    try:
-        while True:
-            # Use config-driven sampling by averaging according to YAML parameters
-            await asyncio.to_thread(reader.read_average)
-            await asyncio.sleep(delay)
-    except asyncio.CancelledError:
-        pass
-
-
-@pytest.mark.asyncio
-async def test_waveform_io():
-    pressures = np.loadtxt(Path(__file__).resolve().parent / "daqio" / "apressure.csv")
-    runner, reader = _make_reader_writer(pressures)
-    delay = 1.0 / ai_cfg["freq"]
-
-    with reader:
-        async with runner:
-            tasks = [
-                asyncio.create_task(ai_loop(reader, delay)),
-                asyncio.create_task(queue_printer(publisher._get_ao_queue)),
-                asyncio.create_task(queue_printer(publisher._get_ai_queue)),
-            ]
-            try:
-                await asyncio.sleep(60.0)
-            finally:
-                for t in tasks:
-                    t.cancel()
-                await asyncio.gather(*tasks, return_exceptions=True)
-
-
-if __name__ == "__main__":
-    asyncio.run(test_waveform_io())
