@@ -202,7 +202,11 @@ def setup_task(config: Dict[str, Any]) -> nidaqmx.Task:
 
 
 def read_average(
-    task: nidaqmx.Task, config: Dict[str, Any], output_config: str | None = None
+    task: nidaqmx.Task,
+    config: Dict[str, Any],
+    output_config: str | None = None,
+    *,
+    log_samples: bool = False,
 ) -> tuple[Dict[str, float], list[dict[str, Any]]]:
     """Acquire samples and compute the mean voltage per channel.
 
@@ -212,14 +216,16 @@ def read_average(
         Configured :class:`nidaqmx.Task` containing AI channels.
     config:
         Configuration dictionary with ``freq``, ``averages`` and ``omissions`` keys.
+    log_samples:
+        When ``True`` a timestamped log entry is stored for each kept sample.
 
     Returns
     -------
     tuple of (dict, list of dict)
-        Mapping of channel names to mean voltages in volts and a list of
-        timestamped sample readings for optional post-processing. Each log
-        entry contains a ``timestamp`` and ``channel_values`` mapping channels
-        to floating-point voltages.
+        Mapping of channel names to mean voltages in volts and, if requested,
+        a list of timestamped sample readings for optional post-processing.
+        Each log entry contains a ``timestamp`` and ``channel_values`` mapping
+        channels to floating-point voltages.
     """
 
     cfg_path = (
@@ -230,26 +236,29 @@ def read_average(
     ts_format, _, _ = load_output_config(cfg_path)
 
     sample_interval = 1.0 / config["freq"]
-    batch: list[list[float]] = []
+    running_sum = np.zeros(len(config["channels"]), dtype=float)
     log: list[dict[str, Any]] = []
     for _ in range(config["averages"]):
-        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
         vals = task.read()
         if not isinstance(vals, list):
             vals = [vals]
-        for ch, val in zip(config["channels"], vals):
-            logger.debug(f"{ts} {ch}: {val:.6f} V")
-        log.append(
-            {
-                "timestamp": ts,
-                "channel_values": {ch: float(val) for ch, val in zip(config["channels"], vals)},
-            }
-        )
-        batch.append(vals)
+
+        if log_samples or logger.isEnabledFor(logging.DEBUG):
+            ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+        if logger.isEnabledFor(logging.DEBUG):
+            for ch, val in zip(config["channels"], vals):
+                logger.debug(f"{ts} {ch}: {val:.6f} V")
+        if log_samples:
+            log.append(
+                {
+                    "timestamp": ts,
+                    "channel_values": {ch: float(val) for ch, val in zip(config["channels"], vals)},
+                }
+            )
+        running_sum += np.asarray(vals, dtype=float)
         time.sleep(sample_interval * (config["omissions"] + 1))
 
-    arr = np.asarray(batch, dtype=float)
-    means = np.nanmean(arr, axis=0)
+    means = running_sum / config["averages"]
 
     channel_values = {ch: float(val) for ch, val in zip(config["channels"], means)}
     for ch, val in channel_values.items():
@@ -264,7 +273,7 @@ def read_average(
     else:
         loop.create_task(publish_ai(payload))
 
-    return channel_values, log
+    return channel_values, log if log_samples else []
 
 
 # ---------------------------------------------------------------------------

@@ -161,6 +161,7 @@ class AIReader:
         self,
         *,
         use_output_yaml: bool = True,
+        log_samples: bool = False,
     ) -> tuple[Dict[str, float], List[Dict[str, Any]]]:
         """
         Hardware-timed block acquisition with optional decimation.
@@ -171,6 +172,7 @@ class AIReader:
                 dt_keep = (omissions + 1) / freq
           - Prints one line per channel for each kept sample.
           - Returns ({channel: mean_voltage}, log_of_kept_samples)
+            when ``log_samples`` is ``True``.
           - Publishes once per batch if `publish` is set.
 
         Implementation:
@@ -193,7 +195,7 @@ class AIReader:
         total_samps = self.cfg.averages * stride     # samples per channel for the whole batch
         term = TerminalConfiguration[self.cfg.terminal]
 
-        kept_rows: List[List[float]] = []            # shape: [averages, n_chan]
+        running_sum = np.zeros(len(self.cfg.channels), dtype=float)
         log: List[Dict[str, Any]] = []
         n_chan = len(self.cfg.channels)
 
@@ -233,16 +235,17 @@ class AIReader:
                 else:
                     last_vals = [block[ch_idx][-1] for ch_idx in range(n_chan)]
 
-                ts_print = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-                #for ch, val in zip(self.cfg.channels, last_vals):
-                    #print(f"{ts_print} {ch}: {val:.6f} V")
-                log.append(
-                    {
-                        "timestamp": ts_print,
-                        "channel_values": {ch: float(v) for ch, v in zip(self.cfg.channels, last_vals)},
-                    }
-                )
-                kept_rows.append(last_vals)
+                if log_samples:
+                    ts_print = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
+                    log.append(
+                        {
+                            "timestamp": ts_print,
+                            "channel_values": {
+                                ch: float(v) for ch, v in zip(self.cfg.channels, last_vals)
+                            },
+                        }
+                    )
+                running_sum += np.asarray(last_vals, dtype=float)
                 read_so_far += stride
 
             # Drain any residual samples if caller asked for more reads than we consumed
@@ -257,8 +260,7 @@ class AIReader:
 
             # Task auto-stops on FINITE completion; context manager closes it
 
-        arr = np.asarray(kept_rows, dtype=float)     # shape: [averages, n_chan]
-        means = np.nanmean(arr, axis=0)
+        means = running_sum / self.cfg.averages
         channel_values = {ch: float(val) for ch, val in zip(self.cfg.channels, means)}
         #for ch, val in channel_values.items():
             #print(f"{ch}: {val:.6f} V")
@@ -269,7 +271,7 @@ class AIReader:
             payload = {"timestamp": ts_pub, "channel_values": channel_values}
             self._publish_now(payload)
 
-        return channel_values, log
+        return channel_values, log if log_samples else []
 
     # ---------- Utilities ----------
     def _resolve_time_format(self, use_output_yaml: bool) -> str:
