@@ -79,7 +79,8 @@ class AsyncAORunner:
         *,
         # Random mode params (ignored if waveform provided)
         interval: float = 0.5,
-        low: float = 0.0,
+        waveform_cycles_hz: Optional[float] = None,  # NEW
+        frequency: float = 1.0,                      # legacy
         high: float = 1.0,
         seed: Optional[int] = None,
         # Waveform mode params
@@ -120,6 +121,10 @@ class AsyncAORunner:
         self._wf_matrix_T: Optional[np.ndarray] = None # (C, S) for DMA write
         self._sample_period: Optional[float] = None    # seconds between samples
         self._samples_per_cycle: Optional[int] = None
+        if waveform_cycles_hz is not None:
+            self.frequency = float(waveform_cycles_hz)
+        else:
+            self.frequency = float(frequency)
 
     # ---------- lifecycle ----------
     async def start(self) -> None:
