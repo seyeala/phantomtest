@@ -234,8 +234,8 @@ class AIReader:
                     last_vals = [block[ch_idx][-1] for ch_idx in range(n_chan)]
 
                 ts_print = datetime.now().strftime("%Y-%m-%d %H:%M:%S.%f")
-                for ch, val in zip(self.cfg.channels, last_vals):
-                    print(f"{ts_print} {ch}: {val:.6f} V")
+                #for ch, val in zip(self.cfg.channels, last_vals):
+                    #print(f"{ts_print} {ch}: {val:.6f} V")
                 log.append(
                     {
                         "timestamp": ts_print,
@@ -260,8 +260,8 @@ class AIReader:
         arr = np.asarray(kept_rows, dtype=float)     # shape: [averages, n_chan]
         means = np.nanmean(arr, axis=0)
         channel_values = {ch: float(val) for ch, val in zip(self.cfg.channels, means)}
-        for ch, val in channel_values.items():
-            print(f"{ch}: {val:.6f} V")
+        #for ch, val in channel_values.items():
+            #print(f"{ch}: {val:.6f} V")
 
         # Publish once per batch (optional)
         if self.publish:
