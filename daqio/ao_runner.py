@@ -2,16 +2,65 @@
 from __future__ import annotations
 import asyncio
 from typing import Iterable, Optional, Callable, Awaitable, List, Dict, Union
-from datetime import datetime
+from datetime import datetime, timezone
+from time import monotonic_ns
 
 import numpy as np
 import nidaqmx
 from nidaqmx.system import System
+from nidaqmx.constants import AcquisitionType, RegenerationMode
+from nidaqmx.stream_writers import AnalogMultiChannelWriter
 
 PublishFn = Callable[[Dict], Awaitable[None]]
 
 ArrayLike = Union[List[float], np.ndarray]
 PerChanWave = Union[ArrayLike, Dict[str, ArrayLike], np.ndarray]  # (S,), (S,C), or {ch: (S,)}
+
+
+class _SyncMapper:
+    """
+    Live linear map between device sample index k and system wall time (UTC epoch seconds):
+        t_sys(k) ≈ a + b * k
+    We refine 'b' (slope) against host monotonic time and keep continuity by
+    re-pinning 'a' at the current sample k (no timestamp jumps).
+    """
+    __slots__ = ("Fs", "a_ns", "b_ns_per_sample", "mono0_ns", "alpha")
+
+    def __init__(self, Fs_actual: float, time_format: str):
+        self.Fs = float(Fs_actual)
+        # Pin intercept to current system clock at start (UTC); caller can format later
+        self.a_ns = int(datetime.now(timezone.utc).timestamp() * 1e9)
+        self.mono0_ns = monotonic_ns()
+        # Initial slope from requested Fs
+        self.b_ns_per_sample = int(round((1.0 / self.Fs) * 1e9))
+        # Smoothing for drift (2% new, 98% old)
+        self.alpha = 0.02
+
+    def update(self, k_now: int) -> None:
+        """Refine slope using monotonic vs device elapsed; re-pin intercept at k_now."""
+        if k_now <= 0:
+            return
+        mono_now_ns = monotonic_ns()
+        mono_elapsed_ns = mono_now_ns - self.mono0_ns
+        dev_elapsed_ns = int(round((k_now / self.Fs) * 1e9))
+        if dev_elapsed_ns <= 0:
+            return
+        # Ratio ~ 1 + drift; reject absurd outliers
+        ratio = mono_elapsed_ns / dev_elapsed_ns
+        if 0.98 <= ratio <= 1.02:
+            est_b_ns = max(1, int(round(ratio * (1e9 / self.Fs))))
+            self.b_ns_per_sample = int(round(
+                (1 - self.alpha) * self.b_ns_per_sample + self.alpha * est_b_ns
+            ))
+            # Re-pin intercept so mapping is continuous at (k_now, wall_now)
+            wall_now_ns = int(datetime.now(timezone.utc).timestamp() * 1e9)
+            self.a_ns = wall_now_ns - self.b_ns_per_sample * int(k_now)
+
+    def ts_str_for_k(self, k: int, time_format: str) -> str:
+        wall_s = (self.a_ns + self.b_ns_per_sample * int(k)) / 1e9
+        # Use naive datetime formatting to keep your original behavior (no timezone suffix)
+        return datetime.fromtimestamp(wall_s).strftime(time_format)
+
 
 class AsyncAORunner:
     """
@@ -67,7 +116,8 @@ class AsyncAORunner:
         self._stopping = asyncio.Event()
 
         # prepared waveform (samples x channels)
-        self._wf_matrix: Optional[np.ndarray] = None   # shape: (S, C)
+        self._wf_matrix: Optional[np.ndarray] = None   # (S, C) for value lookup
+        self._wf_matrix_T: Optional[np.ndarray] = None # (C, S) for DMA write
         self._sample_period: Optional[float] = None    # seconds between samples
         self._samples_per_cycle: Optional[int] = None
 
@@ -99,6 +149,7 @@ class AsyncAORunner:
             # Create task
             self._task = nidaqmx.Task()
             for ch in self._ao_ch_names:
+                # Keep the same range selection behavior as before for compatibility
                 self._task.ao_channels.add_ao_voltage_chan(
                     ch,
                     min_val=min(self.low, -10.0),
@@ -141,7 +192,6 @@ class AsyncAORunner:
         Normalize user-provided waveform into a (S, C) float array and compute timing.
         sample_rate = frequency * S  -> sample_period = 1 / sample_rate
         """
-        # Convert waveform into matrix (S, C)
         wf = self.waveform
         chs = self._ao_ch_names
 
@@ -188,6 +238,7 @@ class AsyncAORunner:
         self._sample_period = 1.0 / sample_rate
         self._samples_per_cycle = S
         self._wf_matrix = matrix
+        self._wf_matrix_T = matrix.T.copy(order="C")  # (C, S) once, for efficient DMA write
 
     # ---------- main loop ----------
     async def _run_loop(self) -> None:
@@ -200,23 +251,146 @@ class AsyncAORunner:
         finally:
             pass  # stop() handles zeroing and close
 
+    # ---------------- random mode (unchanged semantics) ----------------
     async def _run_random_mode(self) -> None:
         while not self._stopping.is_set():
             values = self._rng.uniform(self.low, self.high, size=len(self._ao_ch_names)).tolist()
             self._task.write(values)
             if self.publish:
                 ts = datetime.now().strftime(self.time_format)
-                # Cast each value to a native Python float for downstream consumers
                 payload = {
                     "timestamp": ts,
-                    "channel_values": {
-                        ch: float(v) for ch, v in zip(self._ao_ch_names, values)
-                    },
+                    "channel_values": {ch: float(v) for ch, v in zip(self._ao_ch_names, values)},
                 }
                 await self.publish(payload)
             await asyncio.sleep(self.interval)
 
+    # ---------------- waveform mode: HW-timed with safe fallback ----------------
     async def _run_waveform_mode(self) -> None:
+        """
+        Preferred path: hardware-timed, regenerative AO; publish per-sample based on
+        device sample counter 'n', with system-time timestamps in the same format.
+
+        If a major exception occurs during initial setup/start, fall back to the
+        original software-timed loop to preserve behavior.
+        """
+        try:
+            await self._run_waveform_mode_hw()
+        except Exception as e:
+            # Fallback for "big exception happens in the beginning"
+            # (e.g., misconfigured device, timing not supported, start failure, etc.)
+            warn = f"[AsyncAORunner] HW-timed AO failed early ({type(e).__name__}: {e}). Falling back to software-timed mode."
+            print(warn)
+            await self._run_waveform_mode_software_fallback()
+
+    async def _run_waveform_mode_hw(self) -> None:
+        """
+        Hardware-timed regenerative AO with per-sample publishing.
+        Uses the device's total_samp_per_chan_generated to derive:
+          - which waveform row was (just) output
+          - the system-timestamp to publish with (using a monotonic-calibrated mapper)
+        Adds lightweight alignment checks and respects self.cycles.
+        """
+        assert self._wf_matrix is not None and self._wf_matrix_T is not None
+        assert self._sample_period is not None and self._samples_per_cycle is not None
+
+        S = self._samples_per_cycle
+        Fs_req = 1.0 / self._sample_period  # = frequency * S
+
+        # Configure hardware-timed, continuous AO with regeneration
+        self._task.timing.cfg_samp_clk_timing(
+            rate=Fs_req,
+            sample_mode=AcquisitionType.CONTINUOUS
+        )
+        self._task.out_stream.regen_mode = RegenerationMode.ALLOW_REGENERATION
+
+        # Pre-load one cycle and start (auto_start=False for glitch-free start)
+        writer = AnalogMultiChannelWriter(self._task.out_stream, auto_start=False)
+        writer.write_many_sample(self._wf_matrix_T, timeout=10.0)
+
+        # Anchors and mapping (system clock + monotonic for drift)
+        mapper_ready = False
+        try:
+            # Pin mapping to system time at start
+            mapper = _SyncMapper(Fs_actual=Fs_req, time_format=self.time_format)
+            self._task.start()
+            # Query coerced rate (actual)
+            Fs = float(self._task.timing.samp_clk_rate)
+            # Update mapper slope to the actual rate immediately
+            mapper.b_ns_per_sample = int(round((1.0 / Fs) * 1e9))
+            mapper_ready = True
+        except Exception:
+            # Don't leave the task partially started
+            raise
+
+        # Lightweight alignment checks
+        ppm_margin = 1000  # growth bound margin (0.1%)
+        last_n = 0
+        last_mono_ns = monotonic_ns()
+        publishes_since_cal = 0
+        # To avoid busy spinning while still being per-sample faithful, we poll frequently
+        # and publish any samples that have been generated since the last poll.
+        while not self._stopping.is_set():
+            # How many samples have actually gone out?
+            n = int(self._task.out_stream.total_samp_per_chan_generated)
+
+            # --- Alignment checks ---
+            if n < last_n:
+                # Task likely restarted or error in driver; we won't attempt to "recover" silently.
+                raise RuntimeError("AO sample counter decreased; task restart or device error.")
+            mono_now_ns = monotonic_ns()
+            dt = (mono_now_ns - last_mono_ns) / 1e9
+            if dt > 0:
+                max_expected = Fs * dt * (1 + ppm_margin / 1e6)
+                if (n - last_n) > (max_expected + 10):  # +10 for coarse polling slack
+                    print(f"[AsyncAORunner] AlignmentWarning: AO count grew faster than expected "
+                          f"(Δn={n-last_n}, dt={dt:.6f}s, Fs={Fs:.3f}Hz).")
+
+            # Periodically refine mapping slope vs monotonic
+            publishes_since_cal += 1
+            if publishes_since_cal >= 5:
+                mapper.update(k_now=n)
+                publishes_since_cal = 0
+            last_mono_ns = mono_now_ns
+
+            # Publish every new sample between last_n and n (per-sample behavior like original)
+            if self.publish and n > last_n:
+                # Cap per-iteration to avoid pathological burst (keeps loop responsive)
+                # This does not drop samples; we just iterate this loop again quickly.
+                batch_limit = max(1, int(0.02 * Fs))  # ~20 ms worth at most per tick
+                target_n = n
+                cursor = last_n
+                while cursor < target_n and not self._stopping.is_set():
+                    upper = min(target_n, cursor + batch_limit)
+                    for k in range(cursor + 1, upper + 1):
+                        row_idx = (k - 1) % S  # sample just generated
+                        row = self._wf_matrix[row_idx, :]  # (C,)
+                        ts = mapper.ts_str_for_k(k, self.time_format)
+                        payload = {
+                            "timestamp": ts,
+                            "channel_values": {
+                                ch: float(v) for ch, v in zip(self._ao_ch_names, row.tolist())
+                            },
+                        }
+                        await self.publish(payload)
+                    cursor = upper
+
+            last_n = n
+
+            # Respect finite cycles, if requested
+            if self.cycles:
+                cycles_done = n // S
+                if cycles_done >= self.cycles:
+                    break
+
+            # Light sleep to avoid busy spin; bounded by a fraction of sample period
+            # If Fs is very low, this is also fine (we'll publish per-sample as they appear).
+            await asyncio.sleep(min(0.005, max(0.001, self._sample_period * 0.25)))
+
+    async def _run_waveform_mode_software_fallback(self) -> None:
+        """
+        Original software-timed loop (your previous behavior), kept intact for fallback.
+        """
         assert self._wf_matrix is not None and self._sample_period is not None and self._samples_per_cycle is not None
         S = self._samples_per_cycle
         sp = self._sample_period
@@ -225,16 +399,14 @@ class AsyncAORunner:
         idx = 0
         while not self._stopping.is_set():
             row = self._wf_matrix[idx, :]  # shape (C,)
+            # On-demand write (software-timed)
             self._task.write(row.tolist())
 
             if self.publish:
                 ts = datetime.now().strftime(self.time_format)
-                # Convert per-channel samples to native floats before publishing
                 payload = {
                     "timestamp": ts,
-                    "channel_values": {
-                        ch: float(v) for ch, v in zip(self._ao_ch_names, row.tolist())
-                    },
+                    "channel_values": {ch: float(v) for ch, v in zip(self._ao_ch_names, row.tolist())},
                 }
                 await self.publish(payload)
 
