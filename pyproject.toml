@@ -21,3 +21,6 @@ py-modules = ["list_devices"]
 
 [tool.setuptools.packages.find]
 include = ["daqio"]
+
+[tool.pytest.ini_options]
+addopts = "-p pytest_asyncio"
