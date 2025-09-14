@@ -206,7 +206,13 @@ class AsyncAORunner:
             self._task.write(values)
             if self.publish:
                 ts = datetime.now().strftime(self.time_format)
-                payload = {"timestamp": ts, "channel_values": dict(zip(self._ao_ch_names, values))}
+                # Cast each value to a native Python float for downstream consumers
+                payload = {
+                    "timestamp": ts,
+                    "channel_values": {
+                        ch: float(v) for ch, v in zip(self._ao_ch_names, values)
+                    },
+                }
                 await self.publish(payload)
             await asyncio.sleep(self.interval)
 
@@ -223,9 +229,12 @@ class AsyncAORunner:
 
             if self.publish:
                 ts = datetime.now().strftime(self.time_format)
+                # Convert per-channel samples to native floats before publishing
                 payload = {
                     "timestamp": ts,
-                    "channel_values": dict(zip(self._ao_ch_names, row.tolist())),
+                    "channel_values": {
+                        ch: float(v) for ch, v in zip(self._ao_ch_names, row.tolist())
+                    },
                 }
                 await self.publish(payload)
 

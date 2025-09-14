@@ -160,7 +160,8 @@ async def write_random(
                 ts = datetime.now().strftime(ts_format)
                 payload = {
                     "timestamp": ts,
-                    "channel_values": {c: v for c, v in zip(ao_channels, values)},
+                    # Ensure downstream consumers receive plain Python floats
+                    "channel_values": {c: float(v) for c, v in zip(ao_channels, values)},
                 }
                 await publish_ao(payload)
                 await asyncio.sleep(interval)
