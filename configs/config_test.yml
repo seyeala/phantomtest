@@ -3,9 +3,9 @@ daqI:
   channels:
     - Dev1/ai0
     - Dev1/ai1
-  freq: 10
-  averages: 5
-  omissions: 0  # number of sample intervals to skip between reads
+  freq: 10000
+  averages: 10
+  omissions: 100  # number of sample intervals to skip between reads
   terminal: RSE
 daqO:
   device: cDAQ1Mod1
