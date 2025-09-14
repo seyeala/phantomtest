@@ -214,7 +214,9 @@ def read_average(
     -------
     tuple of (dict, list of dict)
         Mapping of channel names to mean voltages in volts and a list of
-        timestamped sample readings for optional post-processing.
+        timestamped sample readings for optional post-processing. Each log
+        entry contains a ``timestamp`` and ``channel_values`` mapping channels
+        to floating-point voltages.
     """
 
     cfg_path = (
@@ -234,7 +236,12 @@ def read_average(
             vals = [vals]
         for ch, val in zip(config["channels"], vals):
             print(f"{ts} {ch}: {val:.6f} V")
-        log.append({"timestamp": ts, "values": dict(zip(config["channels"], vals))})
+        log.append(
+            {
+                "timestamp": ts,
+                "channel_values": {ch: float(val) for ch, val in zip(config["channels"], vals)},
+            }
+        )
         batch.append(vals)
         time.sleep(sample_interval * (config["omissions"] + 1))
 
