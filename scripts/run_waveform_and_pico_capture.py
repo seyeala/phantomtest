@@ -4,7 +4,7 @@ run_waveform_and_pico_capture.py
 Orchestrates NI-DAQmx AI/AO and PicoScope captures with AI-suffixed filenames.
 - Prefers multi-shot via your existing automation/capture_multi_shot.py (Option B).
 - Falls back to one-shot via capture_single_shot.py if multi-shot is not provided.
-- Starts two separate processes that log AI and AO publications from daqio.publisher to CSV.
+- Starts background tasks that log AI and AO publications from daqio.publisher to CSV.
 
 Requirements:
 - Lives in repo 1 (PhantomTest)
@@ -20,15 +20,10 @@ Outputs (all in one folder):
 """
 import argparse
 import asyncio
-import csv
 import importlib.util
-import multiprocessing as mp
-import os
 import signal
 import sys
 import threading
-import time
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -77,73 +72,6 @@ def _check_nidaq_available(cfg_path: Path):
         return False, e
 
 
-# -------------------------
-# CSV writer process target
-# -------------------------
-def _csv_writer_loop(kind: str, q: mp.Queue, out_csv: str):
-    """
-    Separate process: consumes flattened rows and appends to CSV.
-    kind: "AI" or "AO"
-    q: multiprocessing.Queue with dict rows: {"timestamp": str, "device": str, "channel": str, "value": float}
-       Sentinel: None → clean exit
-    """
-    try:
-        first = True
-        with open(out_csv, "a", newline="") as f:
-            w = csv.writer(f)
-            while True:
-                item = q.get()
-                if item is None:
-                    break
-                ts = item.get("timestamp", "")
-                dev = item.get("device", "")
-                ch = item.get("channel", "")
-                val = item.get("value", "")
-                if first:
-                    w.writerow(["source", "timestamp", "device", "channel", "value"])
-                    first = False
-                w.writerow([kind, ts, dev, ch, val])
-    except Exception as e:
-        print(f"[{kind} CSV writer] Error: {e}", file=sys.stderr)
-
-
-# ---------------------------------------
-# Async forwarders: async-queue → mp-queue
-# ---------------------------------------
-async def _forward_ai(async_get_queue, out_q: mp.Queue, stop: asyncio.Event, default_device: str):
-    q = async_get_queue()
-    try:
-        while not stop.is_set():
-            payload = await q.get()
-            results = payload.get("results") if isinstance(payload, dict) else None
-            ts = payload.get("timestamp") if isinstance(payload, dict) else None
-            dev = payload.get("device") if isinstance(payload, dict) else None
-            if isinstance(results, dict):
-                iso = ts if isinstance(ts, str) else datetime.utcnow().isoformat()
-                devname = dev or default_device or ""
-                for ch, val in results.items():
-                    out_q.put({"timestamp": iso, "device": devname, "channel": str(ch), "value": float(val)})
-            q.task_done()
-    except asyncio.CancelledError:
-        pass
-
-
-async def _forward_ao(async_get_queue, out_q: mp.Queue, stop: asyncio.Event, default_device: str):
-    q = async_get_queue()
-    try:
-        while not stop.is_set():
-            payload = await q.get()
-            chvals = payload.get("channel_values") if isinstance(payload, dict) else None
-            ts = payload.get("timestamp") if isinstance(payload, dict) else None
-            dev = payload.get("device") if isinstance(payload, dict) else None
-            if isinstance(chvals, dict):
-                iso = ts if isinstance(ts, str) else datetime.utcnow().isoformat()
-                devname = dev or default_device or ""
-                for ch, val in chvals.items():
-                    out_q.put({"timestamp": iso, "device": devname, "channel": str(ch), "value": float(val)})
-            q.task_done()
-    except asyncio.CancelledError:
-        pass
 
 
 # ----------------------------------
@@ -177,31 +105,84 @@ def _load_module_from_path(module_name: str, file_path: Path):
     return mod
 
 
-# -------------------------
-# AI snapshot helper (thread)
-# -------------------------
-def _start_ai_snapshot_loop(ai_cfg: dict, period_s: float) -> threading.Event:
-    """
-    Start a background thread that repeatedly does AIReader.read_average()
-    and publishes snapshots via daqio.publisher. Returns a stop flag.
-    """
-    stop_flag = threading.Event()
+async def capture_loop(args, outdir: Path, stop_evt: asyncio.Event) -> None:
+    """Run Pico capture (multi-shot preferred) without blocking the event loop."""
+    if stop_evt.is_set():
+        return
 
-    def _run():
+    did_capture = False
+
+    multi_py_path: Optional[Path] = None
+    if args.multi_py:
+        multi_py_path = Path(args.multi_py)
+    elif args.capture_py:
+        candidate = Path(args.capture_py).parent / "capture_multi_shot.py"
+        if candidate.exists():
+            multi_py_path = candidate
+
+    if multi_py_path and multi_py_path.exists():
+        print(f"== Step 3: Performing multi-shot Pico captures using: {multi_py_path}")
         try:
-            with AIReader(**ai_cfg, publish=publisher.publish_ai) as reader:
-                while not stop_flag.is_set():
-                    try:
-                        reader.read_average()
-                    except Exception as e:
-                        print(f"[ai-snapshot] warning: {e}")
-                    time.sleep(max(0.0, period_s))
-        except Exception as e:
-            print(f"[ai-snapshot] fatal: {e}")
+            if args.capture_py is None:
+                raise RuntimeError("--capture-py must be provided when using --multi-py")
+            single_mod = _load_module_from_path("capture_single_shot", Path(args.capture_py))
+            print(f"[capture] single-shot module loaded from: {single_mod.__file__}")
 
-    t = threading.Thread(target=_run, daemon=True)
-    t.start()
-    return stop_flag
+            multi_mod = _load_module_from_path("capture_multi_shot", multi_py_path)
+            print(f"[capture] multi-shot module loaded from: {multi_mod.__file__}")
+
+            multi_cfg_path = Path(args.multi_config) if args.multi_config else (multi_py_path.parent / "capture_multi.yml")
+            import yaml  # local import
+            with open(multi_cfg_path, "r") as f:
+                multi_cfg = yaml.safe_load(f)
+
+            if args.captures is not None:
+                multi_cfg["captures"] = int(args.captures)
+            if args.rest_ms is not None:
+                multi_cfg["rest_ms"] = float(args.rest_ms)
+            if args.break_on_key:
+                multi_cfg["break_on_key"] = True
+
+            multi_cfg["timestamp_filenames"] = True
+            multi_cfg["csv_path"] = str(outdir / "capture.csv")
+            multi_cfg["numpy_path"] = str(outdir / "capture.npz")
+            multi_cfg["daq_source"] = "ai"
+            multi_cfg["name_embed"] = args.name_embed
+            multi_cfg["name_maxlen"] = int(args.name_maxlen)
+
+            if stop_evt.is_set():
+                return
+            await asyncio.to_thread(multi_mod.main, multi_cfg)
+            did_capture = True
+            print("[ok] Multi-shot capture phase complete.")
+        except Exception as e:
+            print(f"[warning] Multi-shot capture failed: {e}")
+
+    if not did_capture and not stop_evt.is_set():
+        if not args.capture_py:
+            print("[info] No capture script provided; skipping Pico capture.")
+        else:
+            print("== Step 3: Performing single-shot Pico capture with AI-in-name...")
+            try:
+                cap_mod = _load_module_from_path("capture_single_shot_inproc", Path(args.capture_py))
+                cap_cfg_path = Path(args.capture_config) if args.capture_config else (Path(args.capture_py).parent / "capture_config_test.yml")
+                import yaml  # local import
+                with open(cap_cfg_path, "r") as f:
+                    cap_cfg = yaml.safe_load(f)
+
+                cap_cfg["timestamp_filenames"] = True
+                cap_cfg["csv_path"] = str(outdir / "capture.csv")
+                cap_cfg["numpy_path"] = str(outdir / "capture.npz")
+                cap_cfg["daq_source"] = "ai"
+                cap_cfg["name_embed"] = args.name_embed
+                cap_cfg["name_maxlen"] = int(args.name_maxlen)
+
+                if stop_evt.is_set():
+                    return
+                await asyncio.to_thread(cap_mod.main, cap_cfg)
+                print("[ok] Pico single-shot capture complete.")
+            except Exception as e:
+                print(f"[warning] Pico single-shot capture failed: {e}")
 
 
 # ---------------
@@ -212,7 +193,6 @@ async def _run(args):
     ok, payload = _check_nidaq_available(Path(args.daq_config))
     if not ok:
         print(f"[warning] NI-DAQmx unavailable: {payload}")
-        # Still allow Pico captures; proceed with config dicts as best-effort.
         cfg = load_yaml(Path(args.daq_config))
         ai_cfg = cfg.get("daqI", {})
         ao_cfg = cfg.get("daqO", {})
@@ -226,137 +206,31 @@ async def _run(args):
     ai_csv = str(outdir / "ai_log.csv")
     ao_csv = str(outdir / "ao_log.csv")
 
-    # Load waveform for AO
     pressures: Optional[np.ndarray]
     if args.waveform_csv and Path(args.waveform_csv).exists():
         pressures = np.loadtxt(args.waveform_csv)
         print(f"Loaded AO waveform from {args.waveform_csv} with {len(pressures)} samples")
     else:
         n = 2000
-        pressures = (np.sin(np.linspace(0, 2 * np.pi, n)) * 2.0).astype(np.float32)  # +/-2 V
+        pressures = (np.sin(np.linspace(0, 2 * np.pi, n)) * 2.0).astype(np.float32)
         print("No waveform CSV found; using a synthetic sine waveform.")
 
-    # -------------------------------
-    # Step 2: Pre-capture AI snapshot
-    # -------------------------------
     print("== Step 2: Taking pre-capture AI snapshot (for filename embedding)...")
     try:
         with AIReader(**ai_cfg, publish=publisher.publish_ai) as reader:
-            await asyncio.to_thread(reader.read_average)  # publishes one AI payload
+            await asyncio.to_thread(reader.read_average)
         print("[ok] AI snapshot published.")
     except Exception as e:
         print(f"[warning] Could not take AI snapshot before capture: {e}")
 
-    # ----------------------------------
-    # Step 3: Pico capture phase (Option B: MULTI first, else ONE)
-    # ----------------------------------
-    did_capture = False
+    print("== Step 3: Starting AI/AO CSV consumer tasks...")
+    ai_columns = ["timestamp"] + [str(ch) for ch in ai_cfg.get("channels", [])]
+    ao_columns = ["timestamp"] + [str(ch) for ch in ao_cfg.get("channels", [])]
+    ai_csv_task = publisher.start_ai_consumer(ai_csv, ai_columns)
+    ao_csv_task = publisher.start_ao_consumer(ao_csv, ao_columns)
+    print(f"[ok] CSV consumers started: {ai_csv} | {ao_csv}")
 
-    # Try multi-shot if --multi-py provided (or can be inferred next to capture-py)
-    multi_py_path: Optional[Path] = None
-    if args.multi_py:
-        multi_py_path = Path(args.multi_py)
-    elif args.capture_py:
-        candidate = Path(args.capture_py).parent / "capture_multi_shot.py"
-        if candidate.exists():
-            multi_py_path = candidate
-
-    if multi_py_path and multi_py_path.exists():
-        print(f"== Step 3: Performing multi-shot Pico captures using: {multi_py_path}")
-        try:
-            # Load capture_single_shot first (so multi's 'import capture_single_shot' succeeds)
-            if args.capture_py is None:
-                raise RuntimeError("--capture-py must be provided when using --multi-py")
-            single_mod = _load_module_from_path("capture_single_shot", Path(args.capture_py))
-            print(f"[capture] single-shot module loaded from: {single_mod.__file__}")
-
-            # Then load multi-shot module
-            multi_mod = _load_module_from_path("capture_multi_shot", multi_py_path)
-            print(f"[capture] multi-shot module loaded from: {multi_mod.__file__}")
-
-            # Resolve multi config path
-            multi_cfg_path = Path(args.multi_config) if args.multi_config else (multi_py_path.parent / "capture_multi.yml")
-
-            import yaml  # local import
-            with open(multi_cfg_path, "r") as f:
-                multi_cfg = yaml.safe_load(f)
-
-            # ---- Apply overrides (captures/rest/break) if provided
-            if args.captures is not None:
-                multi_cfg["captures"] = int(args.captures)
-            if args.rest_ms is not None:
-                multi_cfg["rest_ms"] = float(args.rest_ms)
-            if args.break_on_key:
-                multi_cfg["break_on_key"] = True
-
-            # ---- Force single-shot output/name embedding settings (used by inner single-shot)
-            multi_cfg["timestamp_filenames"] = True
-            multi_cfg["csv_path"] = str(outdir / "capture.csv")
-            multi_cfg["numpy_path"] = str(outdir / "capture.npz")
-            multi_cfg["daq_source"] = "ai"
-            multi_cfg["name_embed"] = args.name_embed
-            multi_cfg["name_maxlen"] = int(args.name_maxlen)
-
-            # ---- Start a temporary AI snapshot loop so each shot sees a fresh AI payload
-            ai_period = max(0.0, 1.0 / float(ai_cfg.get("freq", 10)))
-            ai_loop_stop = _start_ai_snapshot_loop(ai_cfg, period_s=ai_period)
-
-            try:
-                # Run multi-shot (blocking). It calls capture_single_shot.main(multi_cfg) repeatedly.
-                multi_mod.main(multi_cfg)
-            finally:
-                ai_loop_stop.set()
-
-            did_capture = True
-            print("[ok] Multi-shot capture phase complete.")
-        except Exception as e:
-            print(f"[warning] Multi-shot capture failed: {e}")
-
-    # If multi-shot not used or failed, try one-shot (previous behavior)
-    if not did_capture:
-        if args.capture_py is None:
-            print("[info] No capture script provided; skipping Pico capture.")
-        else:
-            print("== Step 3: Performing single-shot Pico capture with AI-in-name...")
-            try:
-                cap_mod = _load_module_from_path("capture_single_shot_inproc", Path(args.capture_py))
-                # Resolve single-shot config
-                cap_cfg_path = Path(args.capture_config) if args.capture_config else (Path(args.capture_py).parent / "capture_config_test.yml")
-                import yaml
-                with open(cap_cfg_path, "r") as f:
-                    cap_cfg = yaml.safe_load(f)
-
-                # Force outputs into our outdir + ensure timestamped filenames + AI embedding
-                cap_cfg["timestamp_filenames"] = True
-                cap_cfg["csv_path"] = str(outdir / "capture.csv")
-                cap_cfg["numpy_path"] = str(outdir / "capture.npz")
-                cap_cfg["daq_source"] = "ai"
-                cap_cfg["name_embed"] = args.name_embed  # "full" (recommended) or "mini"
-                cap_cfg["name_maxlen"] = int(args.name_maxlen)
-
-                cap_mod.main(cap_cfg)
-                print("[ok] Pico single-shot capture complete.")
-            except Exception as e:
-                print(f"[warning] Pico single-shot capture failed: {e}")
-
-    # -----------------------------------------
-    # Step 4: Start AI/AO logging to CSV (fork)
-    # -----------------------------------------
-    print("== Step 4: Starting AI/AO CSV writer processes...")
-    mp_ctx = mp.get_context("spawn")  # Windows-safe
-    ai_q: mp.Queue = mp_ctx.Queue(maxsize=2048)
-    ao_q: mp.Queue = mp_ctx.Queue(maxsize=2048)
-
-    ai_proc = mp_ctx.Process(target=_csv_writer_loop, args=("AI", ai_q, ai_csv), daemon=True)
-    ao_proc = mp_ctx.Process(target=_csv_writer_loop, args=("AO", ao_q, ao_csv), daemon=True)
-    ai_proc.start()
-    ao_proc.start()
-    print(f"[ok] CSV writers started: {ai_csv} | {ao_csv}")
-
-    # ---------------------------------------------
-    # Step 5: Start forwarders and AI/AO run itself
-    # ---------------------------------------------
-    print("== Step 5: Starting AI/AO run...")
+    print("== Step 4: Starting capture and AI/AO run...")
     stop_evt = asyncio.Event()
 
     def _sigint_handler(*_):
@@ -379,12 +253,9 @@ async def _run(args):
         channels=ao_cfg["channels"],
         waveform=pressures,
         waveform_cycles_hz=ao_cycles_hz,
-        publish=publisher.publish_ao,  # publishing handled by daqio.publisher
+        publish=publisher.publish_ao,
     )
     reader = AIReader(**ai_cfg, publish=publisher.publish_ai)
-
-    forward_ai_task = asyncio.create_task(_forward_ai(publisher._get_ai_queue, ai_q, stop_evt, ai_cfg.get("device", "")))
-    forward_ao_task = asyncio.create_task(_forward_ao(publisher._get_ao_queue, ao_q, stop_evt, ao_cfg.get("device", "")))
 
     ai_delay = max(0.0, 1.0 / float(ai_cfg.get("freq", 10)))
 
@@ -401,12 +272,15 @@ async def _run(args):
         async with runner:
             try:
                 while not stop_evt.is_set():
-                    await asyncio.sleep(0.1)  # runner does its own HW timing
+                    await asyncio.sleep(0.1)
             except asyncio.CancelledError:
                 pass
 
     ai_task = asyncio.create_task(_ai_loop())
     ao_task = asyncio.create_task(_ao_loop())
+    capture_task = asyncio.create_task(capture_loop(args, outdir, stop_evt))
+
+    tasks = [ai_task, ao_task, capture_task, ai_csv_task, ao_csv_task]
 
     print("[run] AI/AO active. Press ENTER or Ctrl+C to stop.")
     if args.duration > 0:
@@ -419,18 +293,11 @@ async def _run(args):
         await asyncio.to_thread(key_flag.wait)
         stop_evt.set()
 
-    # -----------------------
-    # Step 6: Graceful shutdown
-    # -----------------------
-    print("== Step 6: Stopping tasks and writer processes...")
-    for t in (ai_task, ao_task, forward_ai_task, forward_ao_task):
+    print("== Step 5: Stopping tasks...")
+    for t in tasks:
         t.cancel()
-    await asyncio.gather(ai_task, ao_task, forward_ai_task, forward_ao_task, return_exceptions=True)
+    await asyncio.gather(*tasks, return_exceptions=True)
 
-    ai_q.put(None)
-    ao_q.put(None)
-    ai_proc.join(timeout=5.0)
-    ao_proc.join(timeout=5.0)
     print("[ok] Shutdown complete. All files in:", outdir)
 
 
