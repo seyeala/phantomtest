@@ -10,16 +10,22 @@ PhantomTest provides a minimal test harness for verifying connectivity to a vari
   * `tests/test_device_names.py` – lists device names and product types.
   * `tests/test_daqo_config.py` – exercises `daqio.daqO.load_config`.
   * `tests/test_publisher_ai.py` – verifies the async publisher writes CSV data.
-* **Scripts**
-  * `list_devices.py` – lists device names and product types.
+* **Example scripts**
   * `IOasyncExample.py` – asynchronous analog I/O demo.
   * `IOasyncInteractive.py` – async analog I/O demo with keypress exit.
-  * `test_ai_all.py` – reads all analog input channels, averaging samples.
-  * `test_ao_random.py` – drives analog-output channels with random voltages.
+  * `list_devices.py` – prints detected device names and product types.
+  * `test_ai_all.py` – samples all analog‑input channels and averages readings.
+  * `test_ao_random.py` – drives analog‑output channels with random voltages.
 * **Package**
-  * `daqio/` – helpers for DAQ I/O and CSV publishing (`daqI.py`, `daqO.py`, `publisher.py`).
+  * `daqio/` – helpers for NI‑DAQmx I/O and CSV publishing:
+    * `config.py` – YAML loading, device discovery and argument parsing.
+    * `publisher.py` – async queues for publishing AI/AO data to CSV.
+    * `daqI.py` – synchronous analog‑input reader.
+    * `daqO.py` – random analog‑output driver.
+    * `ai_reader.py` – object‑oriented analog‑input reader with optional publishing.
+    * `ao_runner.py` – async analog‑output runner for random values or waveforms.
 * **Configs**
-  * `configs/` – sample YAML configuration files.
+  * `configs/` – sample YAML files consumed by the helpers for channel lists and CSV settings.
 * **Dependencies**
   * `requirements.txt` – Python dependencies for the scripts.
 
@@ -110,6 +116,22 @@ safe source for outputs. Mixing these sections can raise NI‑DAQmx `I/O type`
 errors or drive unintended channels. `IOasyncExample.py` demonstrates loading
 each section separately when performing simultaneous input and output.
 
+### Configuration utilities (`daqio/config.py`)
+
+`daqio/config.py` centralises helpers for all modules.  It loads YAML files,
+discovers NI‑DAQmx devices and merges command‑line options via
+`parse_args_with_config`【F:daqio/config.py†L1-L27】【F:daqio/config.py†L107-L152】.
+`configs/config_test.yml` shows sample `daqI` and `daqO` sections while
+`ai_writer.yml` and `ao_writer.yml` provide minimal CSV writer settings.
+
+### CSV publisher (`daqio/publisher.py`)
+
+`daqio/publisher.py` offers `publish_ai`/`publish_ao` functions that push
+measurements through asyncio queues and background consumers that write CSV
+rows【F:daqio/publisher.py†L44-L76】【F:daqio/publisher.py†L84-L116】.  Start a
+consumer with `start_ai_consumer` or `start_ao_consumer` and supply output
+configuration such as `configs/daqI_output.yml` or `configs/daqO_output.yml`.
+
 ### Analog input (`daqio/daqI.py`)
 
 `daqio/daqI.py` reads one or more analog-input channels and prints the average
@@ -142,6 +164,14 @@ python -m daqio.daqI --config configs/config_test.yml
 
 See the module docstring for details on the expected schema and additional
 options.
+
+### Object-oriented analog input (`daqio/ai_reader.py`)
+
+`AIReader` wraps NI‑DAQmx input tasks in a context manager and can perform
+single reads or buffered `read_average` acquisitions.  Construct it from YAML
+with `AIReader.from_yaml("configs/config_test.yml")` and optionally pass
+`publish=publish_ai` to stream results formatted by `configs/daqI_output.yml`
+【F:daqio/ai_reader.py†L17-L62】【F:daqio/ai_reader.py†L95-L139】.
 
 ### Analog output (`daqio/daqO.py`)
 
@@ -177,4 +207,12 @@ interrupted with `Ctrl+C`, to avoid leaving channels in an unsafe state【F:daqi
 
 Consult the docstring for further information about the CLI and configuration
 options.
+
+### Async analog output runner (`daqio/ao_runner.py`)
+
+`AsyncAORunner` drives outputs either with random values or by replaying a
+waveform.  Use `AsyncAORunner(..., interval=0.5)` for random mode or provide a
+`waveform` to play it hardware‑timed at `frequency` cycles per second.  The
+runner publishes each update, enabling logging via `configs/daqO_output.yml`
+【F:daqio/ao_runner.py†L1-L74】【F:daqio/ao_runner.py†L256-L269】.
 
