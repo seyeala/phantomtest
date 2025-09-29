@@ -25,7 +25,7 @@ import signal
 import sys
 import threading
 from pathlib import Path
-from typing import Optional
+from typing import Iterable, Optional, Set
 
 import numpy as np
 
@@ -39,6 +39,8 @@ from daqio import publisher
 from daqio.ao_runner import AsyncAORunner
 from daqio.ai_reader import AIReader
 from daqio.config import load_yaml
+
+from capture_filename import parse_capture_filename
 
 
 # -----------------------
@@ -105,12 +107,44 @@ def _load_module_from_path(module_name: str, file_path: Path):
     return mod
 
 
+def _list_capture_files(outdir: Path) -> Set[Path]:
+    patterns: Iterable[str] = ("*.npz", "*.csv")
+    files: Set[Path] = set()
+    for pattern in patterns:
+        files.update(outdir.glob(pattern))
+    return files
+
+
+def _log_capture_summary(paths: Iterable[Path]) -> None:
+    for path in sorted(paths):
+        try:
+            metadata = parse_capture_filename(path.name)
+        except ValueError as exc:
+            print(f"[capture] Skipping unrecognised file {path.name}: {exc}")
+            continue
+
+        timestamp_str = metadata.timestamp.isoformat()
+        if metadata.channels:
+            channel_parts = [
+                f"{channel}={value:.3f}"
+                for channel, value in sorted(metadata.channels.items())
+            ]
+            channels_repr = ", ".join(channel_parts)
+        else:
+            channels_repr = "<no channel data>"
+
+        print(
+            f"[capture] Parsed {path.name} | timestamp={timestamp_str} | channels: {channels_repr}"
+        )
+
+
 async def capture_loop(args, outdir: Path, stop_evt: asyncio.Event) -> None:
     """Run Pico capture (multi-shot preferred) without blocking the event loop."""
     if stop_evt.is_set():
         return
 
     did_capture = False
+    known_files = _list_capture_files(outdir)
 
     multi_py_path: Optional[Path] = None
     if args.multi_py:
@@ -155,6 +189,9 @@ async def capture_loop(args, outdir: Path, stop_evt: asyncio.Event) -> None:
             await asyncio.to_thread(multi_mod.main, multi_cfg)
             did_capture = True
             print("[ok] Multi-shot capture phase complete.")
+            new_files = _list_capture_files(outdir) - known_files
+            _log_capture_summary(new_files)
+            known_files |= new_files
         except Exception as e:
             print(f"[warning] Multi-shot capture failed: {e}")
 
@@ -181,6 +218,9 @@ async def capture_loop(args, outdir: Path, stop_evt: asyncio.Event) -> None:
                     return
                 await asyncio.to_thread(cap_mod.main, cap_cfg)
                 print("[ok] Pico single-shot capture complete.")
+                new_files = _list_capture_files(outdir) - known_files
+                _log_capture_summary(new_files)
+                known_files |= new_files
             except Exception as e:
                 print(f"[warning] Pico single-shot capture failed: {e}")
 
