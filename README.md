@@ -120,7 +120,7 @@ each section separately when performing simultaneous input and output.
 
 `daqio/config.py` centralises helpers for all modules.  It loads YAML files,
 discovers NI‑DAQmx devices and merges command‑line options via
-`parse_args_with_config`【F:daqio/config.py†L1-L27】【F:daqio/config.py†L107-L152】.
+`parse_args_with_config`.
 `configs/config_test.yml` shows sample `daqI` and `daqO` sections while
 `ai_writer.yml` and `ao_writer.yml` provide minimal CSV writer settings.
 
@@ -128,7 +128,7 @@ discovers NI‑DAQmx devices and merges command‑line options via
 
 `daqio/publisher.py` offers `publish_ai`/`publish_ao` functions that push
 measurements through asyncio queues and background consumers that write CSV
-rows【F:daqio/publisher.py†L44-L76】【F:daqio/publisher.py†L84-L116】.  Start a
+rows.  Start a
 consumer with `start_ai_consumer` or `start_ao_consumer` and supply output
 configuration such as `configs/daqI_output.yml` or `configs/daqO_output.yml`.
 
@@ -138,7 +138,7 @@ configuration such as `configs/daqI_output.yml` or `configs/daqO_output.yml`.
 voltage per channel. Configuration is supplied via YAML and must define the
 device name, channel list, sample frequency, number of averages, and the number
 of omitted intervals between reads. Omitting the `omissions` field raises a
-configuration error. The terminal configuration is optional【F:daqio/daqI.py†L1-L26】【F:daqio/daqI.py†L66-L74】.
+configuration error. The terminal configuration is optional.
 Use only the `daqI` section for these settings; sourcing channel lists from
 `daqO` may cause NI‑DAQmx `I/O type` errors or unintended output.
 
@@ -170,15 +170,14 @@ options.
 `AIReader` wraps NI‑DAQmx input tasks in a context manager and can perform
 single reads or buffered `read_average` acquisitions.  Construct it from YAML
 with `AIReader.from_yaml("configs/config_test.yml")` and optionally pass
-`publish=publish_ai` to stream results formatted by `configs/daqI_output.yml`
-【F:daqio/ai_reader.py†L17-L62】【F:daqio/ai_reader.py†L95-L139】.
+`publish=publish_ai` to stream results formatted by `configs/daqI_output.yml`.
 
 ### Analog output (`daqio/daqO.py`)
 
 `daqio/daqO.py` continuously drives analog-output channels with random voltages
 generated within a user-specified range. Its YAML configuration accepts the
 device name, optional channel list, update interval, voltage bounds and random
-seed【F:daqio/daqO.py†L1-L16】【F:daqio/daqO.py†L39-L55】.
+seed.
 Always source these values from the `daqO` section; using `daqI` data for outputs
 can raise NI‑DAQmx `I/O type` errors or drive unintended channels.
 
@@ -203,7 +202,7 @@ python -m daqio.daqO --config configs/config_test.yml
 ```
 
 **Safety note:** the module resets all outputs to `0 V` on exit, even when
-interrupted with `Ctrl+C`, to avoid leaving channels in an unsafe state【F:daqio/daqO.py†L10-L13】【F:daqio/daqO.py†L143-L147】.
+interrupted with `Ctrl+C`, to avoid leaving channels in an unsafe state.
 
 Consult the docstring for further information about the CLI and configuration
 options.
@@ -213,6 +212,5 @@ options.
 `AsyncAORunner` drives outputs either with random values or by replaying a
 waveform.  Use `AsyncAORunner(..., interval=0.5)` for random mode or provide a
 `waveform` to play it hardware‑timed at `frequency` cycles per second.  The
-runner publishes each update, enabling logging via `configs/daqO_output.yml`
-【F:daqio/ao_runner.py†L1-L74】【F:daqio/ao_runner.py†L256-L269】.
+runner publishes each update, enabling logging via `configs/daqO_output.yml`.
 
