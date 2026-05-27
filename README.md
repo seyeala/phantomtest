@@ -10,12 +10,18 @@ PhantomTest provides a minimal test harness for verifying connectivity to a vari
   * `tests/test_device_names.py` – lists device names and product types.
   * `tests/test_daqo_config.py` – exercises `daqio.daqO.load_config`.
   * `tests/test_publisher_ai.py` – verifies the async publisher writes CSV data.
+  * `tests/test_waveform_io.py` – validates waveform load/save helper behavior.
+  * `tests/test_capture_filename.py` – verifies capture filename formatting rules.
+  * `tests/test_ai_reader_read_once.py` – checks one-shot AI reader sampling output.
 * **Example scripts**
   * `IOasyncExample.py` – asynchronous analog I/O demo.
   * `IOasyncInteractive.py` – async analog I/O demo with keypress exit.
   * `list_devices.py` – prints detected device names and product types.
   * `test_ai_all.py` – samples all analog‑input channels and averages readings.
   * `test_ao_random.py` – drives analog‑output channels with random voltages.
+  * `capture_filename.py` – prints standardized capture filenames for runs.
+* **Automation scripts**
+  * `scripts/run_waveform_and_pico_capture.py` – runs waveform output with Pico capture.
 * **Package**
   * `daqio/` – helpers for NI‑DAQmx I/O and CSV publishing:
     * `config.py` – YAML loading, device discovery and argument parsing.
