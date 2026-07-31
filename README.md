@@ -220,3 +220,5 @@ waveform.  Use `AsyncAORunner(..., interval=0.5)` for random mode or provide a
 `waveform` to play it hardware‑timed at `frequency` cycles per second.  The
 runner publishes each update, enabling logging via `configs/daqO_output.yml`.
 
+
+Research reported in this publication was supported by the National Institute of Biomedical Imaging and Bioengineering of the National Institutes of Health under Award Number R21EB030654. The content is solely the responsibility of the authors and does not necessarily represent the official views of the National Institutes of Health.
