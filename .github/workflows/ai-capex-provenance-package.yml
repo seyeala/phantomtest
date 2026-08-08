@@ -23,6 +23,7 @@ jobs:
               --retry 5 --retry-all-errors --retry-delay 3 \
               --connect-timeout 30 --max-time 900 \
               --user-agent 'Mozilla/5.0 provenance-builder/1.0' \
+              --referer 'https://escholarship.org/uc/item/33m6w3x0' \
               --output "$2" "$1"
             test -s "$2"
             stat --printf='%n: %s bytes\n' "$2"
@@ -31,7 +32,23 @@ jobs:
           }
           get 'https://iea.blob.core.windows.net/assets/3179f7f8-01f6-4dd6-bffa-c9f7b73f1dc9/KeyQuestionsonEnergyandAI.pdf' 'resources/IEA_2026_Key_Questions_on_Energy_and_AI.pdf'
           get 'https://iea.blob.core.windows.net/assets/de9dea13-b07d-42c5-a398-d1b3ae17d866/EnergyandAI.pdf' 'resources/IEA_2025_Energy_and_AI.pdf'
-          get 'https://escholarship.org/content/qt33m6w3x0/qt33m6w3x0.pdf' 'resources/LBNL_2026_United_States_Data_Center_Energy_Usage_Report_2025_Update.pdf'
+
+          echo '::group::Resolving LBNL 2026 canonical content link through the official eScholarship API'
+          LBNL_JSON="$(curl --fail --show-error --silent \
+            --retry 5 --retry-all-errors --retry-delay 3 \
+            --user-agent 'Mozilla/5.0 provenance-builder/1.0' \
+            --header 'Content-Type: application/json' \
+            --request POST \
+            --data-binary '{"query":"{ item(id: \"ark:/13030/qt33m6w3x0\") { contentLink } }"}' \
+            'https://escholarship.org/graphql')"
+          echo "$LBNL_JSON"
+          LBNL_URL="$(python -c 'import json,sys; print(json.load(sys.stdin)["data"]["item"]["contentLink"])' <<< "$LBNL_JSON")"
+          if [[ "$LBNL_URL" == /* ]]; then LBNL_URL="https://escholarship.org$LBNL_URL"; fi
+          test -n "$LBNL_URL"
+          echo "Resolved content link: $LBNL_URL"
+          echo '::endgroup::'
+          get "$LBNL_URL" 'resources/LBNL_2026_United_States_Data_Center_Energy_Usage_Report_2025_Update.pdf'
+
           get 'https://eta-publications.lbl.gov/sites/default/files/2024-12/lbnl-2024-united-states-data-center-energy-usage-report_1.pdf' 'resources/LBNL_2024_United_States_Data_Center_Energy_Usage_Report.pdf'
           get 'https://www.federalreserve.gov/monetarypolicy/files/20260710_mprfullreport.pdf' 'resources/Federal_Reserve_2026_Monetary_Policy_Report_July.pdf'
           get 'https://www.federalreserve.gov/econres/notes/feds-notes/the-global-trade-effects-of-the-ai-infrastructure-boom-20260213.html' 'resources/Federal_Reserve_2026_The_Global_Trade_Effects_of_the_AI_Infrastructure_Boom.html'
