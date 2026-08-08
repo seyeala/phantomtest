@@ -23,7 +23,6 @@ jobs:
               --retry 5 --retry-all-errors --retry-delay 3 \
               --connect-timeout 30 --max-time 900 \
               --user-agent 'Mozilla/5.0 provenance-builder/1.0' \
-              --referer 'https://escholarship.org/uc/item/33m6w3x0' \
               --output "$2" "$1"
             test -s "$2"
             stat --printf='%n: %s bytes\n' "$2"
@@ -33,21 +32,96 @@ jobs:
           get 'https://iea.blob.core.windows.net/assets/3179f7f8-01f6-4dd6-bffa-c9f7b73f1dc9/KeyQuestionsonEnergyandAI.pdf' 'resources/IEA_2026_Key_Questions_on_Energy_and_AI.pdf'
           get 'https://iea.blob.core.windows.net/assets/de9dea13-b07d-42c5-a398-d1b3ae17d866/EnergyandAI.pdf' 'resources/IEA_2025_Energy_and_AI.pdf'
 
-          echo '::group::Resolving LBNL 2026 canonical content link through the official eScholarship API'
-          LBNL_JSON="$(curl --fail --show-error --silent \
-            --retry 5 --retry-all-errors --retry-delay 3 \
-            --user-agent 'Mozilla/5.0 provenance-builder/1.0' \
-            --header 'Content-Type: application/json' \
-            --request POST \
-            --data-binary '{"query":"{ item(id: \"ark:/13030/qt33m6w3x0\") { contentLink } }"}' \
-            'https://escholarship.org/graphql')"
-          echo "$LBNL_JSON"
-          LBNL_URL="$(python -c 'import json,sys; print(json.load(sys.stdin)["data"]["item"]["contentLink"])' <<< "$LBNL_JSON")"
-          if [[ "$LBNL_URL" == /* ]]; then LBNL_URL="https://escholarship.org$LBNL_URL"; fi
-          test -n "$LBNL_URL"
-          echo "Resolved content link: $LBNL_URL"
+          echo '::group::Resolving and downloading LBNL 2026 through the official eScholarship browser interface'
+          python -m pip install --quiet selenium requests
+          python <<'PY'
+          from __future__ import annotations
+          import json
+          import shutil
+          import time
+          from pathlib import Path
+          import requests
+          from selenium import webdriver
+          from selenium.webdriver.chrome.options import Options
+          from selenium.webdriver.chrome.service import Service
+
+          landing = 'https://escholarship.org/uc/item/33m6w3x0'
+          graphql = 'https://escholarship.org/graphql'
+          out = Path('resources/LBNL_2026_United_States_Data_Center_Energy_Usage_Report_2025_Update.pdf').resolve()
+          download_dir = out.parent
+
+          api = requests.post(
+              graphql,
+              headers={'Content-Type': 'application/json'},
+              data=json.dumps({'query': '{ item(id: "ark:/13030/qt33m6w3x0") { contentLink } }'}),
+              timeout=60,
+          )
+          api.raise_for_status()
+          content_url = api.json()['data']['item']['contentLink']
+          print('Official contentLink:', content_url)
+
+          chrome = shutil.which('google-chrome') or shutil.which('chromium') or shutil.which('chromium-browser')
+          if not chrome:
+              raise RuntimeError('Chrome/Chromium is not available')
+          options = Options()
+          options.binary_location = chrome
+          options.add_argument('--headless=new')
+          options.add_argument('--no-sandbox')
+          options.add_argument('--disable-gpu')
+          options.add_argument('--disable-dev-shm-usage')
+          options.add_argument('--window-size=1440,1200')
+          options.add_experimental_option('prefs', {
+              'download.default_directory': str(download_dir),
+              'download.prompt_for_download': False,
+              'download.directory_upgrade': True,
+              'plugins.always_open_pdf_externally': True,
+              'safebrowsing.enabled': True,
+          })
+          driver_path = shutil.which('chromedriver')
+          service = Service(driver_path) if driver_path else Service()
+          driver = webdriver.Chrome(service=service, options=options)
+          try:
+              driver.get(landing)
+              time.sleep(12)
+              print('Landing title:', driver.title)
+              print('Landing URL:', driver.current_url)
+
+              driver.get(content_url)
+              deadline = time.time() + 90
+              candidates = []
+              while time.time() < deadline:
+                  candidates = [p for p in download_dir.glob('*.pdf') if p.name != out.name and not p.name.endswith('.crdownload')]
+                  if candidates:
+                      break
+                  time.sleep(2)
+
+              if candidates:
+                  downloaded = max(candidates, key=lambda p: p.stat().st_mtime)
+                  downloaded.replace(out)
+                  print('Browser-downloaded file:', out, out.stat().st_size)
+              else:
+                  session = requests.Session()
+                  ua = driver.execute_script('return navigator.userAgent')
+                  for cookie in driver.get_cookies():
+                      session.cookies.set(cookie['name'], cookie['value'], domain=cookie.get('domain'), path=cookie.get('path', '/'))
+                  response = session.get(
+                      content_url,
+                      headers={'User-Agent': ua, 'Referer': landing, 'Accept': 'application/pdf,*/*'},
+                      timeout=180,
+                      allow_redirects=True,
+                  )
+                  print('Cookie-session response:', response.status_code, response.headers.get('content-type'), len(response.content))
+                  response.raise_for_status()
+                  out.write_bytes(response.content)
+          finally:
+              driver.quit()
+
+          data = out.read_bytes()
+          if not data.startswith(b'%PDF-'):
+              raise RuntimeError(f'eScholarship download is not a PDF; size={len(data)}')
+          print('Verified LBNL PDF header and size:', len(data))
+          PY
           echo '::endgroup::'
-          get "$LBNL_URL" 'resources/LBNL_2026_United_States_Data_Center_Energy_Usage_Report_2025_Update.pdf'
 
           get 'https://eta-publications.lbl.gov/sites/default/files/2024-12/lbnl-2024-united-states-data-center-energy-usage-report_1.pdf' 'resources/LBNL_2024_United_States_Data_Center_Energy_Usage_Report.pdf'
           get 'https://www.federalreserve.gov/monetarypolicy/files/20260710_mprfullreport.pdf' 'resources/Federal_Reserve_2026_Monetary_Policy_Report_July.pdf'
