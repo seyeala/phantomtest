@@ -18,11 +18,16 @@ jobs:
           set -euo pipefail
           mkdir -p resources
           get() {
-            curl --fail --location --silent --show-error \
+            echo "::group::Downloading $1"
+            curl --fail --location --show-error \
               --retry 5 --retry-all-errors --retry-delay 3 \
               --connect-timeout 30 --max-time 900 \
+              --user-agent 'Mozilla/5.0 provenance-builder/1.0' \
               --output "$2" "$1"
             test -s "$2"
+            stat --printf='%n: %s bytes\n' "$2"
+            file "$2"
+            echo '::endgroup::'
           }
           get 'https://iea.blob.core.windows.net/assets/3179f7f8-01f6-4dd6-bffa-c9f7b73f1dc9/KeyQuestionsonEnergyandAI.pdf' 'resources/IEA_2026_Key_Questions_on_Energy_and_AI.pdf'
           get 'https://iea.blob.core.windows.net/assets/de9dea13-b07d-42c5-a398-d1b3ae17d866/EnergyandAI.pdf' 'resources/IEA_2025_Energy_and_AI.pdf'
