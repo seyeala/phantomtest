@@ -17,7 +17,7 @@ jobs:
 
       - name: Run provenance builder
         shell: bash
-        run: bash scripts/ai_capex_provenance.sh
+        run: bash scripts/run_ai_capex_provenance.sh
 
       - name: Upload provenance package
         if: ${{ hashFiles('AI_Capex_Macro_Provenance_Package_2026-08-08.zip') != '' }}
