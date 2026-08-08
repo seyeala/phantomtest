@@ -1,0 +1,75 @@
+name: Build AI capex provenance package
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+permissions:
+  contents: read
+
+jobs:
+  build-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Download complete official sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p resources
+          get() {
+            curl --fail --location --silent --show-error \
+              --retry 5 --retry-all-errors --retry-delay 3 \
+              --connect-timeout 30 --max-time 900 \
+              --output "$2" "$1"
+            test -s "$2"
+          }
+          get 'https://iea.blob.core.windows.net/assets/3179f7f8-01f6-4dd6-bffa-c9f7b73f1dc9/KeyQuestionsonEnergyandAI.pdf' 'resources/IEA_2026_Key_Questions_on_Energy_and_AI.pdf'
+          get 'https://iea.blob.core.windows.net/assets/de9dea13-b07d-42c5-a398-d1b3ae17d866/EnergyandAI.pdf' 'resources/IEA_2025_Energy_and_AI.pdf'
+          get 'https://escholarship.org/content/qt33m6w3x0/qt33m6w3x0.pdf' 'resources/LBNL_2026_United_States_Data_Center_Energy_Usage_Report_2025_Update.pdf'
+          get 'https://eta-publications.lbl.gov/sites/default/files/2024-12/lbnl-2024-united-states-data-center-energy-usage-report_1.pdf' 'resources/LBNL_2024_United_States_Data_Center_Energy_Usage_Report.pdf'
+          get 'https://www.federalreserve.gov/monetarypolicy/files/20260710_mprfullreport.pdf' 'resources/Federal_Reserve_2026_Monetary_Policy_Report_July.pdf'
+          get 'https://www.federalreserve.gov/econres/notes/feds-notes/the-global-trade-effects-of-the-ai-infrastructure-boom-20260213.html' 'resources/Federal_Reserve_2026_The_Global_Trade_Effects_of_the_AI_Infrastructure_Boom.html'
+
+      - name: Render Federal Reserve HTML note to PDF
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$CHROME"
+          "$CHROME" --headless --no-sandbox --disable-gpu \
+            --virtual-time-budget=15000 \
+            --print-to-pdf='resources/Federal_Reserve_2026_The_Global_Trade_Effects_of_the_AI_Infrastructure_Boom.pdf' \
+            'https://www.federalreserve.gov/econres/notes/feds-notes/the-global-trade-effects-of-the-ai-infrastructure-boom-20260213.html'
+          test -s 'resources/Federal_Reserve_2026_The_Global_Trade_Effects_of_the_AI_Infrastructure_Boom.pdf'
+
+      - name: Verify files and archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet pypdf
+          python <<'PY'
+          from pathlib import Path
+          from pypdf import PdfReader
+          for p in sorted(Path('resources').glob('*.pdf')):
+              data = p.read_bytes()
+              if not data.startswith(b'%PDF-'):
+                  raise SystemExit(f'Invalid PDF header: {p}')
+              pages = len(PdfReader(str(p), strict=False).pages)
+              if pages < 1:
+                  raise SystemExit(f'No PDF pages: {p}')
+              print(f'{p.name}: {pages} pages, {p.stat().st_size} bytes')
+          html = Path('resources/Federal_Reserve_2026_The_Global_Trade_Effects_of_the_AI_Infrastructure_Boom.html')
+          text = html.read_text(encoding='utf-8', errors='replace')
+          if 'The Global Trade Effects of the AI Infrastructure Boom' not in text:
+              raise SystemExit('Federal Reserve HTML title verification failed')
+          PY
+          zip -r -9 AI_Capex_Official_Source_Files.zip resources
+
+      - name: Upload source bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: AI-Capex-Official-Source-Files
+          path: AI_Capex_Official_Source_Files.zip
+          if-no-files-found: error
+          retention-days: 7
