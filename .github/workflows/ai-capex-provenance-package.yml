@@ -2,8 +2,7 @@ name: Build AI capex provenance package
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
-  workflow_dispatch:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -13,274 +12,64 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Download official source documents
+      - name: Download complete official sources
         shell: bash
         run: |
           set -euo pipefail
-          ROOT="ai_capex_provenance_package"
-          RES="$ROOT/resources"
-          mkdir -p "$RES"
-
-          download() {
-            local url="$1"
-            local out="$2"
-            echo "Downloading $url"
+          mkdir -p resources
+          get() {
             curl --fail --location --silent --show-error \
               --retry 5 --retry-all-errors --retry-delay 3 \
               --connect-timeout 30 --max-time 900 \
-              --output "$out" "$url"
-            test -s "$out"
+              --output "$2" "$1"
+            test -s "$2"
           }
+          get 'https://iea.blob.core.windows.net/assets/3179f7f8-01f6-4dd6-bffa-c9f7b73f1dc9/KeyQuestionsonEnergyandAI.pdf' 'resources/IEA_2026_Key_Questions_on_Energy_and_AI.pdf'
+          get 'https://iea.blob.core.windows.net/assets/de9dea13-b07d-42c5-a398-d1b3ae17d866/EnergyandAI.pdf' 'resources/IEA_2025_Energy_and_AI.pdf'
+          get 'https://escholarship.org/content/qt33m6w3x0/qt33m6w3x0.pdf' 'resources/LBNL_2026_United_States_Data_Center_Energy_Usage_Report_2025_Update.pdf'
+          get 'https://eta-publications.lbl.gov/sites/default/files/2024-12/lbnl-2024-united-states-data-center-energy-usage-report_1.pdf' 'resources/LBNL_2024_United_States_Data_Center_Energy_Usage_Report.pdf'
+          get 'https://www.federalreserve.gov/monetarypolicy/files/20260710_mprfullreport.pdf' 'resources/Federal_Reserve_2026_Monetary_Policy_Report_July.pdf'
+          get 'https://www.federalreserve.gov/econres/notes/feds-notes/the-global-trade-effects-of-the-ai-infrastructure-boom-20260213.html' 'resources/Federal_Reserve_2026_The_Global_Trade_Effects_of_the_AI_Infrastructure_Boom.html'
 
-          download \
-            'https://iea.blob.core.windows.net/assets/3179f7f8-01f6-4dd6-bffa-c9f7b73f1dc9/KeyQuestionsonEnergyandAI.pdf' \
-            "$RES/IEA_2026_Key_Questions_on_Energy_and_AI.pdf"
-
-          download \
-            'https://iea.blob.core.windows.net/assets/de9dea13-b07d-42c5-a398-d1b3ae17d866/EnergyandAI.pdf' \
-            "$RES/IEA_2025_Energy_and_AI.pdf"
-
-          download \
-            'https://escholarship.org/content/qt33m6w3x0/qt33m6w3x0.pdf' \
-            "$RES/LBNL_2026_United_States_Data_Center_Energy_Usage_Report_2025_Update.pdf"
-
-          download \
-            'https://eta-publications.lbl.gov/sites/default/files/2024-12/lbnl-2024-united-states-data-center-energy-usage-report_1.pdf' \
-            "$RES/LBNL_2024_United_States_Data_Center_Energy_Usage_Report.pdf"
-
-          download \
-            'https://www.federalreserve.gov/monetarypolicy/files/20260710_mprfullreport.pdf' \
-            "$RES/Federal_Reserve_2026_Monetary_Policy_Report_July.pdf"
-
-          download \
-            'https://www.federalreserve.gov/econres/notes/feds-notes/the-global-trade-effects-of-the-ai-infrastructure-boom-20260213.html' \
-            "$RES/Federal_Reserve_2026_The_Global_Trade_Effects_of_the_AI_Infrastructure_Boom.html"
-
-      - name: Render the official Federal Reserve HTML note to PDF
+      - name: Render Federal Reserve HTML note to PDF
         shell: bash
         run: |
           set -euo pipefail
-          RES="ai_capex_provenance_package/resources"
-          URL='https://www.federalreserve.gov/econres/notes/feds-notes/the-global-trade-effects-of-the-ai-infrastructure-boom-20260213.html'
-          OUT="$RES/Federal_Reserve_2026_The_Global_Trade_Effects_of_the_AI_Infrastructure_Boom.pdf"
           CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
-          if [ -z "$CHROME" ]; then
-            echo 'No supported Chromium executable found.' >&2
-            exit 1
-          fi
+          test -n "$CHROME"
           "$CHROME" --headless --no-sandbox --disable-gpu \
             --virtual-time-budget=15000 \
-            --print-to-pdf="$OUT" "$URL"
-          test -s "$OUT"
+            --print-to-pdf='resources/Federal_Reserve_2026_The_Global_Trade_Effects_of_the_AI_Infrastructure_Boom.pdf' \
+            'https://www.federalreserve.gov/econres/notes/feds-notes/the-global-trade-effects-of-the-ai-infrastructure-boom-20260213.html'
+          test -s 'resources/Federal_Reserve_2026_The_Global_Trade_Effects_of_the_AI_Infrastructure_Boom.pdf'
 
-      - name: Verify PDFs and build manifest
+      - name: Verify files and archive
         shell: bash
         run: |
           set -euo pipefail
           python -m pip install --quiet pypdf
           python <<'PY'
-          from __future__ import annotations
-          import csv
-          import hashlib
-          import json
           from pathlib import Path
           from pypdf import PdfReader
-
-          root = Path('ai_capex_provenance_package')
-          resources = root / 'resources'
-          retrieved = '2026-08-08'
-
-          sources = [
-              {
-                  'filename': 'IEA_2026_Key_Questions_on_Energy_and_AI.pdf',
-                  'title': 'Key Questions on Energy and AI',
-                  'institution': 'International Energy Agency',
-                  'publication_date': '2026-04-16',
-                  'document_type': 'Official report PDF',
-                  'official_landing_url': 'https://www.iea.org/reports/key-questions-on-energy-and-ai',
-                  'direct_source_url': 'https://iea.blob.core.windows.net/assets/3179f7f8-01f6-4dd6-bffa-c9f7b73f1dc9/KeyQuestionsonEnergyandAI.pdf',
-                  'doi': '',
-                  'license_note': 'CC BY 4.0 as stated by the IEA',
-                  'role_in_model': 'Primary global update for data-center investment, electricity demand, physical bottlenecks, and AI-focused capacity.',
-                  'representation': 'Complete original official PDF',
-              },
-              {
-                  'filename': 'IEA_2025_Energy_and_AI.pdf',
-                  'title': 'Energy and AI',
-                  'institution': 'International Energy Agency',
-                  'publication_date': '2025-04-10',
-                  'document_type': 'Official report PDF',
-                  'official_landing_url': 'https://www.iea.org/reports/energy-and-ai',
-                  'direct_source_url': 'https://iea.blob.core.windows.net/assets/de9dea13-b07d-42c5-a398-d1b3ae17d866/EnergyandAI.pdf',
-                  'doi': '',
-                  'license_note': 'CC BY 4.0 as stated by the IEA',
-                  'role_in_model': 'Foundational global physical model for the energy-AI nexus and data-center demand scenarios.',
-                  'representation': 'Complete original official PDF',
-              },
-              {
-                  'filename': 'LBNL_2026_United_States_Data_Center_Energy_Usage_Report_2025_Update.pdf',
-                  'title': 'United States Data Center Energy Usage Report: 2025 Update',
-                  'institution': 'Lawrence Berkeley National Laboratory / U.S. Department of Energy',
-                  'publication_date': '2026-06-18',
-                  'document_type': 'Official laboratory report PDF',
-                  'official_landing_url': 'https://escholarship.org/uc/item/33m6w3x0',
-                  'direct_source_url': 'https://escholarship.org/content/qt33m6w3x0/qt33m6w3x0.pdf',
-                  'doi': '10.71468/P1RP4F',
-                  'license_note': 'CC BY 4.0 as stated in the repository record',
-                  'role_in_model': 'Independent U.S. bottom-up model based on planned IT-equipment shipments, device power, utilization, and cooling.',
-                  'representation': 'Complete original official PDF',
-              },
-              {
-                  'filename': 'LBNL_2024_United_States_Data_Center_Energy_Usage_Report.pdf',
-                  'title': '2024 United States Data Center Energy Usage Report',
-                  'institution': 'Lawrence Berkeley National Laboratory / U.S. Department of Energy',
-                  'publication_date': '2024-12-19',
-                  'document_type': 'Official laboratory report PDF',
-                  'official_landing_url': 'https://eta-publications.lbl.gov/publications/2024-united-states-data-center',
-                  'direct_source_url': 'https://eta-publications.lbl.gov/sites/default/files/2024-12/lbnl-2024-united-states-data-center-energy-usage-report_1.pdf',
-                  'doi': '10.71468/P1WC7Q',
-                  'license_note': 'Refer to the report and repository record for reuse terms',
-                  'role_in_model': 'Methodological predecessor and historical baseline for the 2026 LBNL update.',
-                  'representation': 'Complete original official PDF',
-              },
-              {
-                  'filename': 'Federal_Reserve_2026_Monetary_Policy_Report_July.pdf',
-                  'title': 'Monetary Policy Report, July 2026',
-                  'institution': 'Board of Governors of the Federal Reserve System',
-                  'publication_date': '2026-07-10',
-                  'document_type': 'Official government report PDF',
-                  'official_landing_url': 'https://www.federalreserve.gov/monetarypolicy/2026-07-mpr-summary.htm',
-                  'direct_source_url': 'https://www.federalreserve.gov/monetarypolicy/files/20260710_mprfullreport.pdf',
-                  'doi': '',
-                  'license_note': 'Official U.S. government publication; consult Federal Reserve website policies for reuse',
-                  'role_in_model': 'Macroeconomic cross-check for U.S. business fixed investment and AI/data-center infrastructure spending.',
-                  'representation': 'Complete original official PDF',
-              },
-              {
-                  'filename': 'Federal_Reserve_2026_The_Global_Trade_Effects_of_the_AI_Infrastructure_Boom.html',
-                  'title': 'The Global Trade Effects of the AI Infrastructure Boom',
-                  'institution': 'Board of Governors of the Federal Reserve System — FEDS Notes',
-                  'publication_date': '2026-02-13',
-                  'document_type': 'Official HTML research note',
-                  'official_landing_url': 'https://www.federalreserve.gov/econres/notes/feds-notes/the-global-trade-effects-of-the-ai-infrastructure-boom-20260213.html',
-                  'direct_source_url': 'https://www.federalreserve.gov/econres/notes/feds-notes/the-global-trade-effects-of-the-ai-infrastructure-boom-20260213.html',
-                  'doi': '10.17016/2380-7172.3994',
-                  'license_note': 'Official Federal Reserve web publication; authors state views are their own and not necessarily those of the Board',
-                  'role_in_model': 'Independent public-sector analysis of the AI infrastructure buildout and its global trade effects.',
-                  'representation': 'Complete official HTML downloaded from source',
-              },
-              {
-                  'filename': 'Federal_Reserve_2026_The_Global_Trade_Effects_of_the_AI_Infrastructure_Boom.pdf',
-                  'title': 'The Global Trade Effects of the AI Infrastructure Boom',
-                  'institution': 'Board of Governors of the Federal Reserve System — FEDS Notes',
-                  'publication_date': '2026-02-13',
-                  'document_type': 'Rendered PDF snapshot of official HTML research note',
-                  'official_landing_url': 'https://www.federalreserve.gov/econres/notes/feds-notes/the-global-trade-effects-of-the-ai-infrastructure-boom-20260213.html',
-                  'direct_source_url': 'https://www.federalreserve.gov/econres/notes/feds-notes/the-global-trade-effects-of-the-ai-infrastructure-boom-20260213.html',
-                  'doi': '10.17016/2380-7172.3994',
-                  'license_note': 'Local print-to-PDF representation of the official web page; HTML file is the source-preserving version',
-                  'role_in_model': 'Portable visual snapshot of the Federal Reserve research note.',
-                  'representation': 'Locally rendered from the official live HTML page; not an issuer-supplied PDF',
-              },
-          ]
-
-          for item in sources:
-              path = resources / item['filename']
-              if not path.is_file() or path.stat().st_size == 0:
-                  raise RuntimeError(f'Missing or empty source file: {path}')
-              data = path.read_bytes()
-              item['retrieved_at_utc'] = retrieved
-              item['file_size_bytes'] = path.stat().st_size
-              item['sha256'] = hashlib.sha256(data).hexdigest()
-              if path.suffix.lower() == '.pdf':
-                  reader = PdfReader(str(path), strict=False)
-                  item['page_count'] = len(reader.pages)
-                  if item['page_count'] < 1:
-                      raise RuntimeError(f'PDF has no pages: {path}')
-                  if not data.startswith(b'%PDF-'):
-                      raise RuntimeError(f'Invalid PDF header: {path}')
-              else:
-                  text = data.decode('utf-8', errors='replace')
-                  if 'The Global Trade Effects of the AI Infrastructure Boom' not in text:
-                      raise RuntimeError(f'Expected Federal Reserve title not found: {path}')
-                  item['page_count'] = ''
-
-          fields = [
-              'filename', 'title', 'institution', 'publication_date', 'document_type',
-              'official_landing_url', 'direct_source_url', 'doi', 'license_note',
-              'role_in_model', 'representation', 'retrieved_at_utc', 'file_size_bytes',
-              'page_count', 'sha256'
-          ]
-
-          with (root / 'SOURCE_MANIFEST.csv').open('w', newline='', encoding='utf-8') as f:
-              writer = csv.DictWriter(f, fieldnames=fields)
-              writer.writeheader()
-              writer.writerows(sources)
-
-          (root / 'SOURCE_MANIFEST.json').write_text(
-              json.dumps(sources, indent=2, ensure_ascii=False) + '\n', encoding='utf-8'
-          )
-
-          checksum_lines = [f"{x['sha256']}  resources/{x['filename']}" for x in sources]
-          (root / 'SHA256SUMS.txt').write_text('\n'.join(checksum_lines) + '\n', encoding='utf-8')
-
-          readme = '''# AI Capex Macro Provenance Package
-
-## Scope
-
-This package contains the public-institution sources selected to ground a macro model of global AI and data-center capital spending. It is intentionally restricted to official or government-sponsored material; it contains no broker research, equity price targets, or company-specific consensus forecasts.
-
-## Contents
-
-- `resources/`: complete original source reports, plus the official Federal Reserve HTML note and a clearly labeled print-to-PDF snapshot of that page.
-- `SOURCE_MANIFEST.csv` and `SOURCE_MANIFEST.json`: source identity, dates, URLs, DOI/licensing notes, modeling role, page counts, file sizes, and SHA-256 hashes.
-- `SHA256SUMS.txt`: integrity checks for every resource.
-
-## Source hierarchy
-
-1. **IEA 2026 — Key Questions on Energy and AI:** principal global update for investment, electricity demand, and physical bottlenecks.
-2. **IEA 2025 — Energy and AI:** foundational global energy/data-center model.
-3. **LBNL 2026:** independent U.S. bottom-up model based on planned equipment shipments and engineering assumptions.
-4. **LBNL 2024:** predecessor and historical/methodological baseline.
-5. **Federal Reserve 2026 Monetary Policy Report:** macroeconomic cross-check for U.S. fixed investment.
-6. **Federal Reserve FEDS Note:** public-sector analysis of the international trade effects of the AI infrastructure buildout.
-
-## Methodological caution
-
-Official sources are generally less exposed to stock-specific promotion than sell-side research, but they are not assumption-free. Forecasts should be treated as scenario-conditioned estimates. The manifest records institutional disclaimers and representation type so that original issuer PDFs are not confused with the locally rendered Federal Reserve web-page snapshot.
-
-## Integrity verification
-
-From the package directory, run:
-
-```bash
-sha256sum -c SHA256SUMS.txt
-```
-
-Retrieval date: 2026-08-08 UTC.
-'''
-          (root / 'README.md').write_text(readme, encoding='utf-8')
-
-          print('Verified resources:')
-          for x in sources:
-              pages = f", {x['page_count']} pages" if x['page_count'] != '' else ''
-              print(f"- {x['filename']}: {x['file_size_bytes']} bytes{pages}")
+          for p in sorted(Path('resources').glob('*.pdf')):
+              data = p.read_bytes()
+              if not data.startswith(b'%PDF-'):
+                  raise SystemExit(f'Invalid PDF header: {p}')
+              pages = len(PdfReader(str(p), strict=False).pages)
+              if pages < 1:
+                  raise SystemExit(f'No PDF pages: {p}')
+              print(f'{p.name}: {pages} pages, {p.stat().st_size} bytes')
+          html = Path('resources/Federal_Reserve_2026_The_Global_Trade_Effects_of_the_AI_Infrastructure_Boom.html')
+          text = html.read_text(encoding='utf-8', errors='replace')
+          if 'The Global Trade Effects of the AI Infrastructure Boom' not in text:
+              raise SystemExit('Federal Reserve HTML title verification failed')
           PY
+          zip -r -9 AI_Capex_Official_Source_Files.zip resources
 
-      - name: Create distributable ZIP
-        shell: bash
-        run: |
-          set -euo pipefail
-          zip -r -9 AI_Capex_Macro_Provenance_Package_2026-08-08.zip ai_capex_provenance_package
-          test -s AI_Capex_Macro_Provenance_Package_2026-08-08.zip
-
-      - name: Upload provenance package artifact
+      - name: Upload source bundle
         uses: actions/upload-artifact@v4
         with:
-          name: AI-Capex-Macro-Provenance-Package-2026-08-08
-          path: AI_Capex_Macro_Provenance_Package_2026-08-08.zip
+          name: AI-Capex-Official-Source-Files
+          path: AI_Capex_Official_Source_Files.zip
           if-no-files-found: error
           retention-days: 7
