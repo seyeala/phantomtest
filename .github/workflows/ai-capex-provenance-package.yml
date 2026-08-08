@@ -48,7 +48,10 @@ jobs:
           landing = 'https://escholarship.org/uc/item/33m6w3x0'
           graphql = 'https://escholarship.org/graphql'
           out = Path('resources/LBNL_2026_United_States_Data_Center_Energy_Usage_Report_2025_Update.pdf').resolve()
-          download_dir = out.parent
+          download_dir = Path('lbnl_browser_download').resolve()
+          if download_dir.exists():
+              shutil.rmtree(download_dir)
+          download_dir.mkdir(parents=True)
 
           api = requests.post(
               graphql,
@@ -90,15 +93,16 @@ jobs:
               deadline = time.time() + 90
               candidates = []
               while time.time() < deadline:
-                  candidates = [p for p in download_dir.glob('*.pdf') if p.name != out.name and not p.name.endswith('.crdownload')]
-                  if candidates:
+                  partials = list(download_dir.glob('*.crdownload'))
+                  candidates = [p for p in download_dir.iterdir() if p.is_file() and not p.name.endswith('.crdownload')]
+                  if candidates and not partials:
                       break
                   time.sleep(2)
 
               if candidates:
                   downloaded = max(candidates, key=lambda p: p.stat().st_mtime)
-                  downloaded.replace(out)
-                  print('Browser-downloaded file:', out, out.stat().st_size)
+                  shutil.copyfile(downloaded, out)
+                  print('Browser-downloaded file:', downloaded.name, downloaded.stat().st_size)
               else:
                   session = requests.Session()
                   ua = driver.execute_script('return navigator.userAgent')
@@ -146,15 +150,34 @@ jobs:
           python -m pip install --quiet pypdf
           python <<'PY'
           from pathlib import Path
+          import hashlib
           from pypdf import PdfReader
-          for p in sorted(Path('resources').glob('*.pdf')):
+
+          expected = {
+              'IEA_2026_Key_Questions_on_Energy_and_AI.pdf': (130, 150),
+              'IEA_2025_Energy_and_AI.pdf': (290, 320),
+              'LBNL_2026_United_States_Data_Center_Energy_Usage_Report_2025_Update.pdf': (20, 100),
+              'LBNL_2024_United_States_Data_Center_Energy_Usage_Report.pdf': (70, 90),
+              'Federal_Reserve_2026_Monetary_Policy_Report_July.pdf': (70, 85),
+              'Federal_Reserve_2026_The_Global_Trade_Effects_of_the_AI_Infrastructure_Boom.pdf': (3, 20),
+          }
+          hashes = {}
+          for name, bounds in expected.items():
+              p = Path('resources') / name
+              if not p.is_file():
+                  raise SystemExit(f'Missing required PDF: {p}')
               data = p.read_bytes()
               if not data.startswith(b'%PDF-'):
                   raise SystemExit(f'Invalid PDF header: {p}')
               pages = len(PdfReader(str(p), strict=False).pages)
-              if pages < 1:
-                  raise SystemExit(f'No PDF pages: {p}')
-              print(f'{p.name}: {pages} pages, {p.stat().st_size} bytes')
+              if not bounds[0] <= pages <= bounds[1]:
+                  raise SystemExit(f'Unexpected page count for {p}: {pages}, expected {bounds}')
+              digest = hashlib.sha256(data).hexdigest()
+              if digest in hashes:
+                  raise SystemExit(f'Duplicate PDF content: {p} and {hashes[digest]}')
+              hashes[digest] = p
+              print(f'{p.name}: {pages} pages, {p.stat().st_size} bytes, sha256={digest}')
+
           html = Path('resources/Federal_Reserve_2026_The_Global_Trade_Effects_of_the_AI_Infrastructure_Boom.html')
           text = html.read_text(encoding='utf-8', errors='replace')
           if 'The Global Trade Effects of the AI Infrastructure Boom' not in text:
