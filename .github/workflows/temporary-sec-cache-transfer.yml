@@ -1,4 +1,4 @@
-name: Temporary SEC cache transfer
+name: Temporary SEC exhibit transfer
 
 on:
   push:
@@ -15,23 +15,34 @@ jobs:
   transfer:
     runs-on: ubuntu-latest
     steps:
-      - name: Download verified public SEC cache
+      - name: Download additional official SEC exhibits
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --location \
-            --request POST \
-            --retry 4 --retry-all-errors \
-            'https://temp.sh/WIxVj/NVDA_SEC_official_cache_20260821.zip' \
-            --output NVDA_SEC_official_cache_20260821.zip
-          printf '%s  %s\n' \
-            '897a87ab847d9c0b333d75b8cd695c33296fed67214b428ae673607201c04706' \
-            'NVDA_SEC_official_cache_20260821.zip' | sha256sum --check --strict
-      - name: Upload verified cache
+          root='incremental/www.sec.gov/Archives/edgar/data/1045810/000104581026000052'
+          mkdir -p "$root"
+          for name in \
+            nvda2027q1ex311.htm \
+            nvda2027q1ex312.htm \
+            nvda2027q1ex321.htm \
+            nvda2027q1ex322.htm
+          do
+            curl --fail --silent --show-error --location \
+              --retry 4 --retry-all-errors \
+              --user-agent 'OpenAI primary-source research operations support@openai.com' \
+              "https://www.sec.gov/Archives/edgar/data/1045810/000104581026000052/${name}" \
+              --output "$root/$name"
+            test "$(wc -c < "$root/$name")" -gt 20
+            grep -Eiq '<!doctype html|<html|<head|<body' "$root/$name"
+            grep -Eiq 'nvidia|nvda' "$root/$name"
+            sleep 0.2
+          done
+          find incremental -type f -print0 | sort -z | xargs -0 sha256sum > incremental/SEC_INCREMENTAL_SHA256SUMS.txt
+      - name: Upload additional official SEC exhibits
         uses: actions/upload-artifact@v4
         with:
-          name: NVDA_SEC_official_cache_20260821
-          path: NVDA_SEC_official_cache_20260821.zip
+          name: NVDA_SEC_incremental_exhibits_20260821
+          path: incremental
           if-no-files-found: error
           retention-days: 1
           compression-level: 0
