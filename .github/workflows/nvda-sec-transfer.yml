@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - nvda-sec-transfer-20260822
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
