@@ -1,0 +1,31 @@
+name: Temporary SEC evidence transfer
+
+on:
+  push:
+    branches:
+      - temp-sec-transfer-20260822
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download public SEC cache archive
+        run: |
+          curl --location --fail --silent --show-error --retry 4 --output nvda_sec_cache_bundle.tar.gz https://litter.catbox.moe/nfkqnv.gz
+      - name: Verify archive hash
+        run: |
+          echo "425a3b936e04b1c8a7ad095b0e16192e53b8cf878e397927cba6b0d99428997b  nvda_sec_cache_bundle.tar.gz" | sha256sum --check --strict
+      - name: Upload verified archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvda-sec-cache-bundle
+          path: nvda_sec_cache_bundle.tar.gz
+          if-no-files-found: error
+          retention-days: 1
