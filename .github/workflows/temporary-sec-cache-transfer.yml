@@ -20,6 +20,7 @@ jobs:
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --location \
+            --request POST \
             --retry 4 --retry-all-errors \
             'https://temp.sh/WIxVj/NVDA_SEC_official_cache_20260821.zip' \
             --output NVDA_SEC_official_cache_20260821.zip
