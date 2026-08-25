@@ -1,0 +1,41 @@
+name: NVDA v0.6.0 Drive persistence transfer
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/nvda-v060-drive-persistence-transfer.yml
+
+permissions:
+  contents: read
+
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download and verify compact persistence set
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p transfer
+          base='https://4662734e18e508.lhr.life'
+          files=(
+            NVDA_Q2FY27_v0.6.0_DRIVE_PERSISTENCE_SET.zip
+            NVDA_Q2FY27_v0.6.0_DRIVE_PERSISTENCE_SET.zip.sha256
+            NVDA_Q2FY27_v0.6.0_DRIVE_PERSISTENCE_SET.zip.sha256.sig
+          )
+          for file in "${files[@]}"; do
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 \
+              "$base/$file" --output "transfer/$file"
+          done
+          (cd transfer && sha256sum -c NVDA_Q2FY27_v0.6.0_DRIVE_PERSISTENCE_SET.zip.sha256)
+
+      - name: Upload compact persistence artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvda-v060-drive-persistence-set
+          path: transfer/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
