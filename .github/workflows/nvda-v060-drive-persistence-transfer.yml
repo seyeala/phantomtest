@@ -19,7 +19,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p transfer
-          base='https://4662734e18e508.lhr.life'
+          base='https://a6f514b888554d.lhr.life'
           files=(
             NVDA_Q2FY27_v0.6.0_DRIVE_PERSISTENCE_SET.zip
             NVDA_Q2FY27_v0.6.0_DRIVE_PERSISTENCE_SET.zip.sha256
