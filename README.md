@@ -222,3 +222,11 @@ runner publishes each update, enabling logging via `configs/daqO_output.yml`.
 
 
 Research reported in this publication was supported by the National Institute of Biomedical Imaging and Bioengineering of the National Institutes of Health under Award Number R21EB030654. The content is solely the responsibility of the authors and does not necessarily represent the official views of the National Institutes of Health.
+
+## Temporary NVDA v0.5.0 persistence relay
+
+This test-only section is temporary and contains no research bytes. It exposes only an expiring relay URL used to move the completed, checksum-verified release into the owner’s Google Drive.
+
+- [NVDA v0.5.0 fingerprint](https://base-usb-guidance-gain.trycloudflare.com/NVDA_Q2FY27_PROJECT_ED25519_FINGERPRINT.txt)
+- [NVDA v0.5.0 package](https://base-usb-guidance-gain.trycloudflare.com/NVDA_Q2FY27_primary_source_forecast_v0.5.0.zip)
+- [NVDA v0.5.0 source vault](https://base-usb-guidance-gain.trycloudflare.com/NVDA_Q2FY27_v0.5.0_SOURCE_VAULT.tar.zst)
