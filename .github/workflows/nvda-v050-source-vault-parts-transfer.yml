@@ -1,0 +1,74 @@
+name: NVDA v0.5.0 source-vault parts transfer
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/nvda-v050-source-vault-parts-transfer.yml
+
+permissions:
+  contents: read
+
+jobs:
+  source-part:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        part: ['00','01','02','03','04','05','06','07']
+    steps:
+      - name: Download and verify source-vault part
+        shell: bash
+        env:
+          PART: ${{ matrix.part }}
+        run: |
+          set -euo pipefail
+          mkdir -p transfer
+          base='https://a6f514b888554d.lhr.life'
+          filename="NVDA_Q2FY27_v0.5.0_SOURCE_VAULT.part-$PART"
+          curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 \
+            "$base/$filename" --output "transfer/$filename"
+          curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 \
+            "$base/CHUNK_MANIFEST.sha256" --output transfer/CHUNK_MANIFEST.sha256
+          grep "  $filename$" transfer/CHUNK_MANIFEST.sha256 > transfer/PART.sha256
+          (cd transfer && sha256sum -c PART.sha256)
+
+      - name: Upload verified source-vault part
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvda-v050-source-vault-part-${{ matrix.part }}
+          path: transfer/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
+
+  source-manifests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download source-vault reconstruction manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p transfer
+          base='https://a6f514b888554d.lhr.life'
+          files=(
+            CHUNK_MANIFEST.sha256
+            NVDA_Q2FY27_v0.5.0_SOURCE_VAULT.tar.zst.sha256
+            NVDA_Q2FY27_v0.5.0_SOURCE_VAULT.tar.zst.sha256.sig
+          )
+          for file in "${files[@]}"; do
+            curl --fail --location --retry 5 --retry-all-errors --connect-timeout 20 \
+              "$base/$file" --output "transfer/$file"
+          done
+
+      - name: Upload reconstruction manifests
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvda-v050-source-vault-manifests
+          path: transfer/
+          compression-level: 0
+          retention-days: 1
+          if-no-files-found: error
