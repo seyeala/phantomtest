@@ -1,0 +1,83 @@
+name: Fin_res Stage5 v0.4.2 canary bridge
+
+on:
+  push:
+    branches: [finres-stage5-v042-canary-bridge-20260827]
+    paths:
+      - .github/workflows/finres-stage5-v042-canary-bridge.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and verify exact canary objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p transfer/objects
+          base='https://filebin.net/finres-stage5-v042-canary-20260827172517-16911'
+          for name in \
+            AMD_stage5_001.tar AMZN_stage5_001.tar AVGO_stage5_001.tar \
+            GOOGL_stage5_001.tar INTC_stage5_001.tar.multipart.json \
+            INTC_stage5_001.tar.part-0001-of-0002 INTC_stage5_001.tar.part-0002-of-0002 \
+            JPM_stage5_001.tar LLY_stage5_001.tar META_stage5_001.tar MSFT_stage5_001.tar \
+            MU_stage5_001.tar NVDA_stage5_001.tar SPCX_stage5_001.tar \
+            SPCX_stage5_002.tar.multipart.json SPCX_stage5_002.tar.part-0001-of-0003 \
+            SPCX_stage5_002.tar.part-0002-of-0003 SPCX_stage5_002.tar.part-0003-of-0003 \
+            SPCX_stage5_003.tar TSLA_stage5_001.tar WMT_stage5_001.tar \
+            WMT_stage5_002.tar.multipart.json WMT_stage5_002.tar.part-0001-of-0002 \
+            WMT_stage5_002.tar.part-0002-of-0002 WMT_stage5_003.tar; do
+            curl -fL --retry 5 --retry-all-errors --retry-delay 2 "$base/$name" -o "transfer/objects/$name"
+          done
+          cat > transfer/SHA256SUMS.txt <<'EOF'
+          27272050cc0ed35c386ce5741030351528903afa056ce215ca55997ee1b49e1f  objects/AMD_stage5_001.tar
+          b1b880a946ca63189c76d48c6f38b28c0a99da6ff634b8bba60f210c898d2b07  objects/AMZN_stage5_001.tar
+          8b7e921d83abc9083ce6e6e77ec07c74373f09a32032d688aa2c4a9ba014847d  objects/AVGO_stage5_001.tar
+          855fc03cf995f7a4c46af63173ab03167db67afdc14a7a42df05052d25893c34  objects/GOOGL_stage5_001.tar
+          c95b0225078662866ac35836a25e4f64824c8f3a74a72f80c2520178e3f1dbc5  objects/INTC_stage5_001.tar.multipart.json
+          cf396a4b7528f10a181a883d16e38e9c36410e28f6aa7a20ef59858b86031b18  objects/INTC_stage5_001.tar.part-0001-of-0002
+          c0d661ac5f6457a5dc5fb133f5fa9fce8fb4fda3b71d38569b6c6b16d0792db5  objects/INTC_stage5_001.tar.part-0002-of-0002
+          875cd1c9372420c5e380d38c5c9608093f4e9a9b3caaa9e63788f9c13a6f8828  objects/JPM_stage5_001.tar
+          c3c0104129fe835760f796a2f5c25fd799ea8a8df672a58b188530c5cde4d809  objects/LLY_stage5_001.tar
+          70b9d287e4f6107b6ef1f9d18687cf7199022593b686e890895e7f4a757951f1  objects/META_stage5_001.tar
+          739a6667a5059dc3949abeee10965ecd1781005d79ab41a8985a55e71f053c6f  objects/MSFT_stage5_001.tar
+          de3024594868dc60847a51fa8ed91ca2bcef4d110a5708de557516d7e4eda91f  objects/MU_stage5_001.tar
+          40f04557735a219c582528cd8f6dd77c6b44aa8db39c3b43f3672e3f86f73697  objects/NVDA_stage5_001.tar
+          49dd2face7c17d8a402174410187b324a2ae3116b101d84ced769f1e01b0d1bc  objects/SPCX_stage5_001.tar
+          d8e194dba34dc2b9a1ac46eb279ee0fa17bff88c11f2b6a2a89c2c3e83420a6b  objects/SPCX_stage5_002.tar.multipart.json
+          603ca1c02bd7c3df36f2f3c422e7ee12a2bc0509468ed7bfae507096ed1f29d0  objects/SPCX_stage5_002.tar.part-0001-of-0003
+          1b8b23adc8eb63dea0e614b6858b26fe61f41362d2bfc1d47e3a217ecbb22965  objects/SPCX_stage5_002.tar.part-0002-of-0003
+          0fa8eba714e6ed5b4df09885b585a240e07cb346d2097d9a40e4da9632ecca7d  objects/SPCX_stage5_002.tar.part-0003-of-0003
+          3d7e238d458dbe29c296f80056695cf51a50c029959b45683687c4ac4a2df021  objects/SPCX_stage5_003.tar
+          552d494cadb292d8f55d44a45a08d273218dfdc2b44fb9f1290a8663820ee0b5  objects/TSLA_stage5_001.tar
+          7051be2f7d2c8a37441c66d1ade051984a9a6ff5fc6ed338e0ff40c1f9131644  objects/WMT_stage5_001.tar
+          8f6fd3ee9acceb7b8aec524225600f871cf31e3ef4a9a2a790ca7eae88e57f48  objects/WMT_stage5_002.tar.multipart.json
+          edb6ff9eb5b428aa49e1a1c4a2334fdc9d70436c68488fdfcc7c59ea1581cc4c  objects/WMT_stage5_002.tar.part-0001-of-0002
+          7e580855a80c1704ac58e87b4b793940abd6449178720db823a448afca1a9f01  objects/WMT_stage5_002.tar.part-0002-of-0002
+          5ccb09f101e0e73af95d97717bd0ebae822d0f7402d3ba3ab434e715ba529ec5  objects/WMT_stage5_003.tar
+          EOF
+          (cd transfer && sha256sum -c SHA256SUMS.txt)
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json
+          rows=[]
+          for p in sorted(Path('transfer/objects').iterdir()):
+              h=hashlib.sha256()
+              with p.open('rb') as f:
+                  for b in iter(lambda:f.read(8*1024*1024),b''): h.update(b)
+              rows.append({'file_name':p.name,'bytes':p.stat().st_size,'sha256':h.hexdigest()})
+          Path('transfer/TRANSFER_MANIFEST.json').write_text(json.dumps({'status':'pass','object_count':len(rows),'objects':rows},indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Upload verified canary bridge artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: finres-stage5-v042-canary-objects-public-bridge
+          path: transfer/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
