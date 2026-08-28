@@ -9,11 +9,11 @@ on:
       file_name:
         description: Bridge filename
         required: true
-        default: Fin_res_STAGE5_2C_execution_control.zip
+        default: Fin_res_STAGE5_2C_chunk1.zip
       artifact_name:
         description: Artifact name
         required: true
-        default: finres-stage5-2c-execution-control
+        default: finres-stage5-2c-chunk1
 
 permissions:
   contents: read
@@ -42,7 +42,7 @@ jobs:
       - name: Download and verify selected bridge file
         shell: bash
         env:
-          FILE_NAME: ${{ inputs.file_name || 'Fin_res_STAGE5_2C_execution_control.zip' }}
+          FILE_NAME: ${{ inputs.file_name || 'Fin_res_STAGE5_2C_chunk1.zip' }}
         run: |
           set -euo pipefail
           mkdir -p bridge
@@ -61,7 +61,7 @@ jobs:
       - name: Upload selected artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ inputs.artifact_name || 'finres-stage5-2c-execution-control' }}
-          path: bridge/${{ inputs.file_name || 'Fin_res_STAGE5_2C_execution_control.zip' }}
+          name: ${{ inputs.artifact_name || 'finres-stage5-2c-chunk1' }}
+          path: bridge/${{ inputs.file_name || 'Fin_res_STAGE5_2C_chunk1.zip' }}
           retention-days: 1
           compression-level: 0
