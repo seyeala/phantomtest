@@ -1,4 +1,4 @@
-name: Fin_res Stage5 2A transfer chunk 1
+name: Fin_res Stage5 2A transfer chunk 2
 
 on:
   push:
@@ -15,7 +15,14 @@ jobs:
   transfer:
     runs-on: ubuntu-latest
     steps:
-      - name: Download and verify chunk 1
+      - name: Delete completed chunk 1 artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --method DELETE repos/${{ github.repository }}/actions/artifacts/9671139168
+      - name: Download and verify chunk 2
         shell: bash
         run: |
           set -euo pipefail
@@ -28,10 +35,10 @@ jobs:
           from pathlib import Path
           import json, shlex
           manifest=json.loads(Path('transfer/STAGE5_2A_TRANSFER_MANIFEST.json').read_text())
-          prefixes=('AAPL_','AMD_','AMZN_')
+          prefixes=('AVGO_','BRK-B_','MSFT_')
           rows=[r for r in manifest['objects'] if r['file_name'].startswith(prefixes)]
-          if len(rows)!=11 or sum(r['bytes'] for r in rows)!=327140050:
-              raise SystemExit(f'chunk 1 contract mismatch: {len(rows)} {sum(r["bytes"] for r in rows)}')
+          if len(rows)!=11 or sum(r['bytes'] for r in rows)!=310387417:
+              raise SystemExit(f'chunk 2 contract mismatch: {len(rows)} {sum(r["bytes"] for r in rows)}')
           commands=[]
           sums=[]
           for row in rows:
@@ -40,7 +47,7 @@ jobs:
               sums.append(f"{row['sha256']}  objects/{name}")
           Path('transfer/download.sh').write_text('set -euo pipefail\n'+'\n'.join(commands)+'\n')
           Path('transfer/SHA256SUMS.txt').write_text('\n'.join(sums)+'\n')
-          Path('transfer/CHUNK_CONTRACT.json').write_text(json.dumps({'chunk':1,'object_count':len(rows),'total_bytes':sum(r['bytes'] for r in rows),'objects':rows},indent=2,sort_keys=True)+'\n')
+          Path('transfer/CHUNK_CONTRACT.json').write_text(json.dumps({'chunk':2,'object_count':len(rows),'total_bytes':sum(r['bytes'] for r in rows),'objects':rows},indent=2,sort_keys=True)+'\n')
           PY
           bash transfer/download.sh
           (cd transfer && sha256sum -c SHA256SUMS.txt)
@@ -56,13 +63,13 @@ jobs:
                       h.update(block)
               rows.append({'file_name':p.name,'bytes':p.stat().st_size,'sha256':h.hexdigest()})
           if len(rows)!=contract['object_count'] or sum(r['bytes'] for r in rows)!=contract['total_bytes']:
-              raise SystemExit('chunk 1 verification mismatch')
-          Path('transfer/TRANSFER_VERIFICATION.json').write_text(json.dumps({'status':'pass','chunk':1,'object_count':len(rows),'total_bytes':sum(r['bytes'] for r in rows),'objects':rows},indent=2,sort_keys=True)+'\n')
+              raise SystemExit('chunk 2 verification mismatch')
+          Path('transfer/TRANSFER_VERIFICATION.json').write_text(json.dumps({'status':'pass','chunk':2,'object_count':len(rows),'total_bytes':sum(r['bytes'] for r in rows),'objects':rows},indent=2,sort_keys=True)+'\n')
           PY
-      - name: Upload chunk 1 artifact
+      - name: Upload chunk 2 artifact
         uses: actions/upload-artifact@v4
         with:
-          name: finres-stage5-2a-chunk1
+          name: finres-stage5-2a-chunk2
           path: transfer/
           if-no-files-found: error
           compression-level: 0
