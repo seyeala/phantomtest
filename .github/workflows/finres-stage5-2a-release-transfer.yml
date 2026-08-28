@@ -1,4 +1,4 @@
-name: Fin_res Stage5 2A public release transfer
+name: Fin_res Stage5 2A transfer chunk 1
 
 on:
   push:
@@ -8,13 +8,14 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
+  actions: write
 
 jobs:
   transfer:
     runs-on: ubuntu-latest
     steps:
-      - name: Download and verify Stage 5.2A objects
+      - name: Download and verify chunk 1
         shell: bash
         run: |
           set -euo pipefail
@@ -27,26 +28,26 @@ jobs:
           from pathlib import Path
           import json, shlex
           manifest=json.loads(Path('transfer/STAGE5_2A_TRANSFER_MANIFEST.json').read_text())
-          if manifest['status']!='pass' or manifest['object_count']!=22:
-              raise SystemExit('invalid transfer manifest')
+          prefixes=('AAPL_','AMD_','AMZN_')
+          rows=[r for r in manifest['objects'] if r['file_name'].startswith(prefixes)]
+          if len(rows)!=11 or sum(r['bytes'] for r in rows)!=327113218:
+              raise SystemExit(f'chunk 1 contract mismatch: {len(rows)} {sum(r["bytes"] for r in rows)}')
           commands=[]
           sums=[]
-          for row in manifest['objects']:
+          for row in rows:
               name=row['file_name']
-              commands.append(
-                  'curl -fL --retry 8 --retry-all-errors --retry-delay 3 '
-                  + shlex.quote(row['url']) + ' -o ' + shlex.quote('transfer/objects/'+name)
-              )
+              commands.append('curl -fL --retry 8 --retry-all-errors --retry-delay 3 '+shlex.quote(row['url'])+' -o '+shlex.quote('transfer/objects/'+name))
               sums.append(f"{row['sha256']}  objects/{name}")
           Path('transfer/download.sh').write_text('set -euo pipefail\n'+'\n'.join(commands)+'\n')
           Path('transfer/SHA256SUMS.txt').write_text('\n'.join(sums)+'\n')
+          Path('transfer/CHUNK_CONTRACT.json').write_text(json.dumps({'chunk':1,'object_count':len(rows),'total_bytes':sum(r['bytes'] for r in rows),'objects':rows},indent=2,sort_keys=True)+'\n')
           PY
           bash transfer/download.sh
           (cd transfer && sha256sum -c SHA256SUMS.txt)
           python - <<'PY'
           from pathlib import Path
           import hashlib,json
-          manifest=json.loads(Path('transfer/STAGE5_2A_TRANSFER_MANIFEST.json').read_text())
+          contract=json.loads(Path('transfer/CHUNK_CONTRACT.json').read_text())
           rows=[]
           for p in sorted(Path('transfer/objects').iterdir()):
               h=hashlib.sha256()
@@ -54,22 +55,15 @@ jobs:
                   for block in iter(lambda:f.read(8*1024*1024),b''):
                       h.update(block)
               rows.append({'file_name':p.name,'bytes':p.stat().st_size,'sha256':h.hexdigest()})
-          if len(rows)!=manifest['object_count'] or sum(r['bytes'] for r in rows)!=manifest['total_bytes']:
-              raise SystemExit('release asset count or byte total mismatch')
-          Path('transfer/TRANSFER_VERIFICATION.json').write_text(json.dumps({'status':'pass','object_count':len(rows),'total_bytes':sum(r['bytes'] for r in rows),'objects':rows},indent=2,sort_keys=True)+'\n')
+          if len(rows)!=contract['object_count'] or sum(r['bytes'] for r in rows)!=contract['total_bytes']:
+              raise SystemExit('chunk 1 verification mismatch')
+          Path('transfer/TRANSFER_VERIFICATION.json').write_text(json.dumps({'status':'pass','chunk':1,'object_count':len(rows),'total_bytes':sum(r['bytes'] for r in rows),'objects':rows},indent=2,sort_keys=True)+'\n')
           PY
-      - name: Create temporary transfer release
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          TAG='finres-stage5-2a-20260828'
-          gh release delete "$TAG" --repo "${{ github.repository }}" --yes --cleanup-tag 2>/dev/null || true
-          gh release create "$TAG" \
-            --repo "${{ github.repository }}" \
-            --title 'Temporary Fin_res Stage 5.2A transfer' \
-            --notes 'Hash-bound temporary transfer assets. Remove after Google Drive certification.' \
-            --prerelease
-          gh release upload "$TAG" transfer/objects/* transfer/STAGE5_2A_TRANSFER_MANIFEST.json transfer/TRANSFER_VERIFICATION.json transfer/SHA256SUMS.txt \
-            --repo "${{ github.repository }}" --clobber
+      - name: Upload chunk 1 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: finres-stage5-2a-chunk1
+          path: transfer/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
