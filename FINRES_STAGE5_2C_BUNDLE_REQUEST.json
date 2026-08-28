@@ -1,7 +1,7 @@
 {
-  "logical_shard_name": "LLY_stage5_002.tar",
-  "file_name": "LLY_stage5_002.drive_bundle.zip",
-  "artifact_name": "finres-stage5-2c-lly-002",
-  "bytes": 82474342,
-  "sha256": "1c327d1166ad25c65211669d32b0391890b1f3445501ab8882a1b02483a040dc"
+  "logical_shard_name": "LLY_stage5_003.tar",
+  "file_name": "LLY_stage5_003.drive_bundle.zip",
+  "artifact_name": "finres-stage5-2c-lly-003",
+  "bytes": 72009061,
+  "sha256": "a6598009e72edc034a3dae8ca13ad5ccade2044abffbc715ccad5ad90826d6ec"
 }
