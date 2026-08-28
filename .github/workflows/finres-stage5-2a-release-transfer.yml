@@ -30,7 +30,7 @@ jobs:
           manifest=json.loads(Path('transfer/STAGE5_2A_TRANSFER_MANIFEST.json').read_text())
           prefixes=('AAPL_','AMD_','AMZN_')
           rows=[r for r in manifest['objects'] if r['file_name'].startswith(prefixes)]
-          if len(rows)!=11 or sum(r['bytes'] for r in rows)!=327113218:
+          if len(rows)!=11 or sum(r['bytes'] for r in rows)!=327140050:
               raise SystemExit(f'chunk 1 contract mismatch: {len(rows)} {sum(r["bytes"] for r in rows)}')
           commands=[]
           sums=[]
