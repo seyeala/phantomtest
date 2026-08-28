@@ -1,4 +1,4 @@
-name: Fin_res Stage5 2A transfer chunk 2
+name: Fin_res Stage5 2A evidence transfer
 
 on:
   push:
@@ -15,61 +15,36 @@ jobs:
   transfer:
     runs-on: ubuntu-latest
     steps:
-      - name: Delete completed chunk 1 artifact
+      - name: Delete completed chunk 2 artifact
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          gh api --method DELETE repos/${{ github.repository }}/actions/artifacts/9671139168
-      - name: Download and verify chunk 2
+          gh api --method DELETE repos/${{ github.repository }}/actions/artifacts/9671187199
+      - name: Download and verify evidence
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p transfer/objects
+          mkdir -p transfer
           curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
-            'https://filebin.net/finres-stage5-2a-9c3242fd3a45/STAGE5_2A_TRANSFER_MANIFEST.json' \
-            -o transfer/STAGE5_2A_TRANSFER_MANIFEST.json
-          echo '7ca268a0b99f33997e409008b5f9b698cb4f4beb2ec3b0049a833008eab3aa1f  transfer/STAGE5_2A_TRANSFER_MANIFEST.json' | sha256sum -c -
+            'https://filebin.net/finres-stage5-2a-evidence-20260828020146-19587/Fin_res_STAGE5_2A_workspace_evidence.zip' \
+            -o transfer/Fin_res_STAGE5_2A_workspace_evidence.zip
+          echo 'bdda4dac05d28c74ae9097fdb75c03bcb48ed45c95537cccbd237aad44c962d9  transfer/Fin_res_STAGE5_2A_workspace_evidence.zip' | sha256sum -c -
           python - <<'PY'
           from pathlib import Path
-          import json, shlex
-          manifest=json.loads(Path('transfer/STAGE5_2A_TRANSFER_MANIFEST.json').read_text())
-          prefixes=('AVGO_','BRK-B_','MSFT_')
-          rows=[r for r in manifest['objects'] if r['file_name'].startswith(prefixes)]
-          if len(rows)!=11 or sum(r['bytes'] for r in rows)!=310387417:
-              raise SystemExit(f'chunk 2 contract mismatch: {len(rows)} {sum(r["bytes"] for r in rows)}')
-          commands=[]
-          sums=[]
-          for row in rows:
-              name=row['file_name']
-              commands.append('curl -fL --retry 8 --retry-all-errors --retry-delay 3 '+shlex.quote(row['url'])+' -o '+shlex.quote('transfer/objects/'+name))
-              sums.append(f"{row['sha256']}  objects/{name}")
-          Path('transfer/download.sh').write_text('set -euo pipefail\n'+'\n'.join(commands)+'\n')
-          Path('transfer/SHA256SUMS.txt').write_text('\n'.join(sums)+'\n')
-          Path('transfer/CHUNK_CONTRACT.json').write_text(json.dumps({'chunk':2,'object_count':len(rows),'total_bytes':sum(r['bytes'] for r in rows),'objects':rows},indent=2,sort_keys=True)+'\n')
+          import hashlib,json,zipfile
+          p=Path('transfer/Fin_res_STAGE5_2A_workspace_evidence.zip')
+          with zipfile.ZipFile(p) as z:
+              crc=z.testzip(); members=len(z.infolist())
+          if crc is not None or members!=29:
+              raise SystemExit(f'evidence ZIP validation failed: {crc}, {members}')
+          Path('transfer/EVIDENCE_VERIFICATION.json').write_text(json.dumps({'status':'pass','file_name':p.name,'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'zip_members':members,'zip_crc_error':crc},indent=2,sort_keys=True)+'\n')
           PY
-          bash transfer/download.sh
-          (cd transfer && sha256sum -c SHA256SUMS.txt)
-          python - <<'PY'
-          from pathlib import Path
-          import hashlib,json
-          contract=json.loads(Path('transfer/CHUNK_CONTRACT.json').read_text())
-          rows=[]
-          for p in sorted(Path('transfer/objects').iterdir()):
-              h=hashlib.sha256()
-              with p.open('rb') as f:
-                  for block in iter(lambda:f.read(8*1024*1024),b''):
-                      h.update(block)
-              rows.append({'file_name':p.name,'bytes':p.stat().st_size,'sha256':h.hexdigest()})
-          if len(rows)!=contract['object_count'] or sum(r['bytes'] for r in rows)!=contract['total_bytes']:
-              raise SystemExit('chunk 2 verification mismatch')
-          Path('transfer/TRANSFER_VERIFICATION.json').write_text(json.dumps({'status':'pass','chunk':2,'object_count':len(rows),'total_bytes':sum(r['bytes'] for r in rows),'objects':rows},indent=2,sort_keys=True)+'\n')
-          PY
-      - name: Upload chunk 2 artifact
+      - name: Upload evidence artifact
         uses: actions/upload-artifact@v4
         with:
-          name: finres-stage5-2a-chunk2
+          name: finres-stage5-2a-evidence
           path: transfer/
           if-no-files-found: error
           compression-level: 0
