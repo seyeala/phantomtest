@@ -1,0 +1,64 @@
+name: Fin_res Stage 5.2C release bridge
+
+on:
+  push:
+    paths:
+      - '.github/workflows/finres-stage5-2c-release-bridge.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  BIN_BASE: https://filebin.net/jxr94ac9fzkm8pyu
+  RELEASE_TAG: finres-stage5-2c-bridge-20260828-01
+
+jobs:
+  bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Download validated bridge archives
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p bridge
+          for file in \
+            Fin_res_STAGE5_2C_chunk1.zip \
+            Fin_res_STAGE5_2C_chunk2.zip \
+            Fin_res_STAGE5_2C_chunk3.zip \
+            Fin_res_STAGE5_2C_execution_control.zip
+          do
+            curl --fail --location --retry 12 --retry-all-errors --retry-delay 5 \
+              --connect-timeout 60 --max-time 0 \
+              "$BIN_BASE/$file" -o "bridge/$file"
+          done
+
+      - name: Verify hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd bridge
+          cat > SHA256SUMS <<'EOF'
+          2254fb1f6efef297f778de9fdf74fffd04431912008b2334a90050f1c0f886c5  Fin_res_STAGE5_2C_chunk1.zip
+          96adc0e205d2242f312ccbaccf3a9d75668f2a285866a8716b5b3621df159531  Fin_res_STAGE5_2C_chunk2.zip
+          f682d9cf5118260edd5944a0211d78360e1d199a90799d00a8d266f6029b4588  Fin_res_STAGE5_2C_chunk3.zip
+          6fff60f2d47a867422511fe03e27871e1d9ae7920730fe75d85209f84c7acc59  Fin_res_STAGE5_2C_execution_control.zip
+          EOF
+          sha256sum -c SHA256SUMS
+
+      - name: Create temporary release and upload assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release delete "$RELEASE_TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$RELEASE_TAG" \
+            bridge/Fin_res_STAGE5_2C_chunk1.zip \
+            bridge/Fin_res_STAGE5_2C_chunk2.zip \
+            bridge/Fin_res_STAGE5_2C_chunk3.zip \
+            bridge/Fin_res_STAGE5_2C_execution_control.zip \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Temporary Fin_res Stage 5.2C bridge" \
+            --notes "Temporary one-day binary bridge for verified public SEC corpus artifacts."
