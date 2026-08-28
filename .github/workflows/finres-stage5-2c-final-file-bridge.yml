@@ -1,0 +1,53 @@
+name: Fin_res Stage 5.2C final file bridge
+
+on:
+  push:
+    paths:
+      - 'FINRES_STAGE5_2C_FINAL_FILE_REQUEST.json'
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  BIN_BASE: https://filebin.net/jxr94ac9fzkm8pyu
+
+jobs:
+  bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Delete prior transient artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" --jq '.artifacts[].id' | while read -r id; do
+            [ -n "$id" ] || continue
+            gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+          done
+
+      - name: Download and verify requested file
+        id: request
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE_NAME=$(jq -r '.file_name' FINRES_STAGE5_2C_FINAL_FILE_REQUEST.json)
+          ARTIFACT_NAME=$(jq -r '.artifact_name' FINRES_STAGE5_2C_FINAL_FILE_REQUEST.json)
+          EXPECTED_SHA=$(jq -r '.sha256' FINRES_STAGE5_2C_FINAL_FILE_REQUEST.json)
+          mkdir -p payload
+          curl --fail --location --retry 12 --retry-all-errors --retry-delay 5 --connect-timeout 60 --max-time 0 "$BIN_BASE/$FILE_NAME" -o "payload/$FILE_NAME"
+          echo "$EXPECTED_SHA  payload/$FILE_NAME" | sha256sum -c -
+          cp FINRES_STAGE5_2C_FINAL_FILE_REQUEST.json payload/DELIVERY_CONTRACT.json
+          echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Upload requested final artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.request.outputs.artifact_name }}
+          path: payload/*
+          retention-days: 1
+          compression-level: 0
