@@ -1,0 +1,67 @@
+name: Fin_res Stage 5.2C sequential artifact bridge
+
+on:
+  push:
+    paths:
+      - '.github/workflows/finres-stage5-2c-sequential-artifact.yml'
+  workflow_dispatch:
+    inputs:
+      file_name:
+        description: Bridge filename
+        required: true
+        default: Fin_res_STAGE5_2C_execution_control.zip
+      artifact_name:
+        description: Artifact name
+        required: true
+        default: finres-stage5-2c-execution-control
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  BIN_BASE: https://filebin.net/jxr94ac9fzkm8pyu
+
+jobs:
+  bridge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Delete prior transient artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+            --jq '.artifacts[].id' | while read -r id; do
+              [ -n "$id" ] || continue
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+            done
+
+      - name: Download and verify selected bridge file
+        shell: bash
+        env:
+          FILE_NAME: ${{ inputs.file_name || 'Fin_res_STAGE5_2C_execution_control.zip' }}
+        run: |
+          set -euo pipefail
+          mkdir -p bridge
+          curl --fail --location --retry 12 --retry-all-errors --retry-delay 5 \
+            --connect-timeout 60 --max-time 0 \
+            "$BIN_BASE/$FILE_NAME" -o "bridge/$FILE_NAME"
+          case "$FILE_NAME" in
+            Fin_res_STAGE5_2C_chunk1.zip) EXPECTED=2254fb1f6efef297f778de9fdf74fffd04431912008b2334a90050f1c0f886c5 ;;
+            Fin_res_STAGE5_2C_chunk2.zip) EXPECTED=96adc0e205d2242f312ccbaccf3a9d75668f2a285866a8716b5b3621df159531 ;;
+            Fin_res_STAGE5_2C_chunk3.zip) EXPECTED=f682d9cf5118260edd5944a0211d78360e1d199a90799d00a8d266f6029b4588 ;;
+            Fin_res_STAGE5_2C_execution_control.zip) EXPECTED=6fff60f2d47a867422511fe03e27871e1d9ae7920730fe75d85209f84c7acc59 ;;
+            *) echo "Unknown bridge file"; exit 2 ;;
+          esac
+          echo "$EXPECTED  bridge/$FILE_NAME" | sha256sum -c -
+
+      - name: Upload selected artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_name || 'finres-stage5-2c-execution-control' }}
+          path: bridge/${{ inputs.file_name || 'Fin_res_STAGE5_2C_execution_control.zip' }}
+          retention-days: 1
+          compression-level: 0
