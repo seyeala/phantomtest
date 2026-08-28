@@ -1,0 +1,29 @@
+name: Fin_res Stage 5.2C bridge cleanup
+
+on:
+  push:
+    paths:
+      - '.github/workflows/finres-stage5-2c-cleanup.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Remove temporary release and transient artifacts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release delete finres-stage5-2c-bridge-20260828-01 \
+            --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag 2>/dev/null || true
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/artifacts?per_page=100" \
+            --jq '.artifacts[].id' | while read -r id; do
+              [ -n "$id" ] || continue
+              gh api --method DELETE "repos/$GITHUB_REPOSITORY/actions/artifacts/$id"
+            done
+          echo 'Temporary Stage 5.2C bridge storage removed.'
