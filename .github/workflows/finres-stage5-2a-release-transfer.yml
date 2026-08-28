@@ -1,4 +1,4 @@
-name: Fin_res Stage5 2A evidence transfer
+name: Cleanup temporary Fin_res Stage5 2A transfer
 
 on:
   push:
@@ -8,44 +8,18 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   actions: write
 
 jobs:
-  transfer:
+  cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: Delete completed chunk 2 artifact
+      - name: Delete temporary artifact and release
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           set -euo pipefail
-          gh api --method DELETE repos/${{ github.repository }}/actions/artifacts/9671187199
-      - name: Download and verify evidence
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p transfer
-          curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
-            'https://filebin.net/finres-stage5-2a-evidence-20260828020146-19587/Fin_res_STAGE5_2A_workspace_evidence.zip' \
-            -o transfer/Fin_res_STAGE5_2A_workspace_evidence.zip
-          echo 'bdda4dac05d28c74ae9097fdb75c03bcb48ed45c95537cccbd237aad44c962d9  transfer/Fin_res_STAGE5_2A_workspace_evidence.zip' | sha256sum -c -
-          python - <<'PY'
-          from pathlib import Path
-          import hashlib,json,zipfile
-          p=Path('transfer/Fin_res_STAGE5_2A_workspace_evidence.zip')
-          with zipfile.ZipFile(p) as z:
-              crc=z.testzip(); members=len(z.infolist())
-          if crc is not None or members!=29:
-              raise SystemExit(f'evidence ZIP validation failed: {crc}, {members}')
-          Path('transfer/EVIDENCE_VERIFICATION.json').write_text(json.dumps({'status':'pass','file_name':p.name,'bytes':p.stat().st_size,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'zip_members':members,'zip_crc_error':crc},indent=2,sort_keys=True)+'\n')
-          PY
-      - name: Upload evidence artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: finres-stage5-2a-evidence
-          path: transfer/
-          if-no-files-found: error
-          compression-level: 0
-          retention-days: 1
+          gh api --method DELETE repos/${{ github.repository }}/actions/artifacts/9671576731 || true
+          gh release delete 'finres-stage5-2a-20260828' --repo '${{ github.repository }}' --yes --cleanup-tag || true
