@@ -1,7 +1,7 @@
 {
-  "logical_shard_name": "MU_stage5_003.tar",
-  "file_name": "MU_stage5_003.drive_bundle.zip",
-  "artifact_name": "finres-stage5-2c-mu-003",
-  "bytes": 51957892,
-  "sha256": "820196120b8c3e2906863f78e264811c0b2dd8f898777016787f55c8d14d3904"
+  "logical_shard_name": "MU_stage5_004.tar",
+  "file_name": "MU_stage5_004.drive_bundle.zip",
+  "artifact_name": "finres-stage5-2c-mu-004",
+  "bytes": 65515652,
+  "sha256": "1484a712df3fce81a49357294baee6213de8dec57376a0539340b95a76820c78"
 }
