@@ -1,0 +1,75 @@
+name: Fin_res Stage5 2A public release transfer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/finres-stage5-2a-release-transfer.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download and verify Stage 5.2A objects
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p transfer/objects
+          curl -fL --retry 8 --retry-all-errors --retry-delay 3 \
+            'https://filebin.net/finres-stage5-2a-9c3242fd3a45/STAGE5_2A_TRANSFER_MANIFEST.json' \
+            -o transfer/STAGE5_2A_TRANSFER_MANIFEST.json
+          echo '7ca268a0b99f33997e409008b5f9b698cb4f4beb2ec3b0049a833008eab3aa1f  transfer/STAGE5_2A_TRANSFER_MANIFEST.json' | sha256sum -c -
+          python - <<'PY'
+          from pathlib import Path
+          import json, shlex
+          manifest=json.loads(Path('transfer/STAGE5_2A_TRANSFER_MANIFEST.json').read_text())
+          if manifest['status']!='pass' or manifest['object_count']!=22:
+              raise SystemExit('invalid transfer manifest')
+          commands=[]
+          sums=[]
+          for row in manifest['objects']:
+              name=row['file_name']
+              commands.append(
+                  'curl -fL --retry 8 --retry-all-errors --retry-delay 3 '
+                  + shlex.quote(row['url']) + ' -o ' + shlex.quote('transfer/objects/'+name)
+              )
+              sums.append(f"{row['sha256']}  objects/{name}")
+          Path('transfer/download.sh').write_text('set -euo pipefail\n'+'\n'.join(commands)+'\n')
+          Path('transfer/SHA256SUMS.txt').write_text('\n'.join(sums)+'\n')
+          PY
+          bash transfer/download.sh
+          (cd transfer && sha256sum -c SHA256SUMS.txt)
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib,json
+          manifest=json.loads(Path('transfer/STAGE5_2A_TRANSFER_MANIFEST.json').read_text())
+          rows=[]
+          for p in sorted(Path('transfer/objects').iterdir()):
+              h=hashlib.sha256()
+              with p.open('rb') as f:
+                  for block in iter(lambda:f.read(8*1024*1024),b''):
+                      h.update(block)
+              rows.append({'file_name':p.name,'bytes':p.stat().st_size,'sha256':h.hexdigest()})
+          if len(rows)!=manifest['object_count'] or sum(r['bytes'] for r in rows)!=manifest['total_bytes']:
+              raise SystemExit('release asset count or byte total mismatch')
+          Path('transfer/TRANSFER_VERIFICATION.json').write_text(json.dumps({'status':'pass','object_count':len(rows),'total_bytes':sum(r['bytes'] for r in rows),'objects':rows},indent=2,sort_keys=True)+'\n')
+          PY
+      - name: Create temporary transfer release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG='finres-stage5-2a-20260828'
+          gh release delete "$TAG" --repo "${{ github.repository }}" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" \
+            --repo "${{ github.repository }}" \
+            --title 'Temporary Fin_res Stage 5.2A transfer' \
+            --notes 'Hash-bound temporary transfer assets. Remove after Google Drive certification.' \
+            --prerelease
+          gh release upload "$TAG" transfer/objects/* transfer/STAGE5_2A_TRANSFER_MANIFEST.json transfer/TRANSFER_VERIFICATION.json transfer/SHA256SUMS.txt \
+            --repo "${{ github.repository }}" --clobber
