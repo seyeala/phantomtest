@@ -1,0 +1,40 @@
+name: NVDA SEC cache transfer
+
+on:
+  push:
+    branches:
+      - nvda-sec-transfer-20260822
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  ARCHIVE_URL: https://dropfile.dev/4vYCHROn/official-sec-cache.tar.gz
+  ARCHIVE_SHA256: 5065a09be5b433aa2d248a1aa54d4ec609f87ded447035f46655a5b9bace9dac
+
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download and verify exact public SEC cache archive
+        run: |
+          set -euo pipefail
+          curl --fail --location --retry 5 --retry-delay 2 \
+            --output official-sec-cache.tar.gz "$ARCHIVE_URL"
+          printf '%s  %s\n' "$ARCHIVE_SHA256" official-sec-cache.tar.gz | sha256sum --check --strict
+          tar -tzf official-sec-cache.tar.gz >/dev/null
+          sha256sum official-sec-cache.tar.gz > official-sec-cache.tar.gz.sha256
+      - name: Upload verified transfer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nvda-sec-cache-transfer
+          path: |
+            official-sec-cache.tar.gz
+            official-sec-cache.tar.gz.sha256
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
