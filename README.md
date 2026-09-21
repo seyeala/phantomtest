@@ -1,154 +1,188 @@
 # PhantomTest
 
-PhantomTest provides a minimal test harness for verifying connectivity to a variety of data acquisition (DAQ) devices.
+**PhantomTest** is a Python test and experimentation framework for data
+acquisition (DAQ) systems. It provides reusable utilities, executable examples,
+and automated tests for discovering DAQ hardware, acquiring analog signals,
+generating analog outputs, replaying waveforms, and recording measurements.
 
-## Repository layout
+## Abstract
 
-* **Tests**
-  * `tests/test_daqs.py` – imports DAQ vendor libraries and reports availability.
-  * `tests/test_nidaqmx_devices.py` – enumerates NI‑DAQmx devices.
-  * `tests/test_device_names.py` – lists device names and product types.
-  * `tests/test_daqo_config.py` – exercises `daqio.daqO.load_config`.
-  * `tests/test_publisher_ai.py` – verifies the async publisher writes CSV data.
-  * `tests/test_waveform_io.py` – validates waveform load/save helper behavior.
-  * `tests/test_capture_filename.py` – verifies capture filename formatting rules.
-  * `tests/test_ai_reader_read_once.py` – checks one-shot AI reader sampling output.
-* **Example scripts**
-  * `IOasyncExample.py` – asynchronous analog I/O demo.
-  * `IOasyncInteractive.py` – async analog I/O demo with keypress exit.
-  * `list_devices.py` – prints detected device names and product types.
-  * `test_ai_all.py` – samples all analog‑input channels and averages readings.
-  * `test_ao_random.py` – drives analog‑output channels with random voltages.
-  * `capture_filename.py` – prints standardized capture filenames for runs.
-* **Automation scripts**
-  * `scripts/run_waveform_and_pico_capture.py` – runs waveform output with Pico capture.
-* **Package**
-  * `daqio/` – helpers for NI‑DAQmx I/O and CSV publishing:
-    * `config.py` – YAML loading, device discovery and argument parsing.
-    * `publisher.py` – async queues for publishing AI/AO data to CSV.
-    * `daqI.py` – synchronous analog‑input reader.
-    * `daqO.py` – random analog‑output driver.
-    * `ai_reader.py` – object‑oriented analog‑input reader with optional publishing.
-    * `ao_runner.py` – async analog‑output runner for random values or waveforms.
-* **Configs**
-  * `configs/` – sample YAML files consumed by the helpers for channel lists and CSV settings.
-* **Dependencies**
-  * `requirements.txt` – Python dependencies for the scripts.
+Reproducible experimental workflows require both reliable communication with
+instrumentation and an explicit record of acquisition parameters. PhantomTest
+supports the development and validation of such workflows across several DAQ
+platforms, with its primary I/O abstractions built around NI-DAQmx. The
+repository combines synchronous and asynchronous analog I/O, YAML-based
+configuration, CSV publishing, device-discovery utilities, and hardware-aware
+tests. It is intended as a compact foundation for laboratory prototyping,
+integration testing, and repeatable data-acquisition experiments.
 
-## Driver prerequisites
+## Key capabilities
 
-The scripts expect the vendor drivers below to already be installed on the host system:
+- Discover installed DAQ drivers and enumerate NI-DAQmx devices.
+- Acquire single or averaged measurements from one or more analog-input
+  channels.
+- Generate bounded random analog-output values or replay sampled waveforms.
+- Coordinate analog input and output through `asyncio`.
+- Publish timestamped AI and AO measurements to CSV files.
+- Create standardized capture filenames and coordinate waveform output with
+  Pico-based capture workflows.
+- Validate configuration and I/O behavior with hardware-independent and
+  hardware-dependent tests.
 
-* **LabJack LJM** – runtime and drivers for LabJack devices
-* **MCC UL** – Measurement Computing Universal Library
-* **NI‑DAQmx Runtime** – runtime libraries for National Instruments DAQ hardware
+## System requirements
 
-Install the appropriate driver packages from each vendor before running the scripts.
+### Software
 
-## Setup
+- Python 3.8 or later
+- `pip` and a Python virtual environment (recommended)
+- The Python packages declared in `pyproject.toml` or `requirements.txt`
 
-1. Ensure Python and `pip` are available.
-2. Install Python dependencies:
+The core `daqio` package depends on
+[`nidaqmx`](https://pypi.org/project/nidaqmx/) and
+[`PyYAML`](https://pypi.org/project/PyYAML/). The broader driver-detection
+examples also use `labjack-ljm` and `mcculw`.
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+### Vendor drivers and hardware
 
-## Running the scripts
+Install the native runtime appropriate to the hardware that will be used:
 
-Execute the scripts from the repository root:
+- **NI-DAQmx Runtime** for National Instruments hardware
+- **LabJack LJM** for LabJack hardware
+- **MCC Universal Library** for Measurement Computing hardware
 
-* Detect available drivers:
+Python packages do not replace these vendor runtimes. Tests that communicate
+with physical devices require compatible hardware, drivers, and device names;
+the remaining unit tests can be run without attached DAQ hardware.
 
-   ```bash
-   pytest tests/test_daqs.py
-   ```
+## Installation
 
-* List NI‑DAQmx devices:
-
-   ```bash
-   pytest tests/test_nidaqmx_devices.py
-   ```
-
-* Print device names and types:
-
-   ```bash
-   pytest tests/test_device_names.py
-   ```
-
-* List device names and product types with a helper script:
-
-   ```bash
-   python list_devices.py
-   ```
-
-* Sample analog inputs from all channels on a device:
-
-   ```bash
-   python test_ai_all.py --dev <DEVICE_NAME> --freq <Hz> --n <samples>
-   ```
-
-* Drive analog outputs with random voltages:
-
-   ```bash
-   python test_ao_random.py --dev <DEVICE_NAME> --interval <s> [--low <V>] [--high <V>]
-   ```
-
-The scripts will report the detected hardware, analog input readings or output activity.
-
-## Running tests
-
-Install the test dependencies:
+Clone the repository and enter its directory:
 
 ```bash
-pip install -r requirements-dev.txt
+git clone <repository-url>
+cd PhantomTest
 ```
 
-Then run the test suite:
+Create and activate a virtual environment:
 
 ```bash
-pytest
+python -m venv .venv
+source .venv/bin/activate
 ```
 
-## DAQ I/O helpers
+On Windows, activate the environment with:
 
-The `daqio` package provides lightweight helpers for working with NI-DAQmx
-analog channels. It requires the NI‑DAQmx runtime and the Python `nidaqmx`
-package to be installed. Sample configuration files live under `configs/`.
+```powershell
+.venv\Scripts\Activate.ps1
+```
 
-Configurations are split into `daqI` (analog input) and `daqO` (analog output)
-sections. `daqI` blocks are **only** for inputs; `daqO` blocks are the sole
-safe source for outputs. Mixing these sections can raise NI‑DAQmx `I/O type`
-errors or drive unintended channels. `IOasyncExample.py` demonstrates loading
-each section separately when performing simultaneous input and output.
+Install the package in editable mode, including its test dependencies:
 
-### Configuration utilities (`daqio/config.py`)
+```bash
+python -m pip install --upgrade pip
+python -m pip install -e ".[test]"
+```
 
-`daqio/config.py` centralises helpers for all modules.  It loads YAML files,
-discovers NI‑DAQmx devices and merges command‑line options via
-`parse_args_with_config`.
-`configs/config_test.yml` shows sample `daqI` and `daqO` sections while
-`ai_writer.yml` and `ao_writer.yml` provide minimal CSV writer settings.
+To exercise driver detection for all supported vendors, install the additional
+bindings listed in `requirements.txt`:
 
-### CSV publisher (`daqio/publisher.py`)
+```bash
+python -m pip install -r requirements.txt
+```
 
-`daqio/publisher.py` offers `publish_ai`/`publish_ao` functions that push
-measurements through asyncio queues and background consumers that write CSV
-rows.  Start a
-consumer with `start_ai_consumer` or `start_ao_consumer` and supply output
-configuration such as `configs/daqI_output.yml` or `configs/daqO_output.yml`.
+## Usage
 
-### Analog input (`daqio/daqI.py`)
+Run all commands from the repository root. Examples below use placeholder
+device names; replace them with the identifiers reported by the local DAQ
+runtime.
 
-`daqio/daqI.py` reads one or more analog-input channels and prints the average
-voltage per channel. Configuration is supplied via YAML and must define the
-device name, channel list, sample frequency, number of averages, and the number
-of omitted intervals between reads. Omitting the `omissions` field raises a
-configuration error. The terminal configuration is optional.
-Use only the `daqI` section for these settings; sourcing channel lists from
-`daqO` may cause NI‑DAQmx `I/O type` errors or unintended output.
+### Detect drivers and devices
 
-Example configuration:
+Check whether the supported vendor libraries can be imported:
+
+```bash
+python -m pytest tests/test_daqs.py
+```
+
+List connected NI-DAQmx devices and their product types:
+
+```bash
+list-devices
+```
+
+The equivalent source-tree command is `python list_devices.py`.
+
+### Acquire analog input
+
+Sample every analog-input channel on a device and report averaged values:
+
+```bash
+python test_ai_all.py --dev Dev1 --freq 1000 --n 10
+```
+
+Alternatively, run the configurable input module:
+
+```bash
+python -m daqio.daqI --config configs/config_test.yml
+```
+
+The `daqI` configuration must define a device, input channels, sampling
+frequency, number of samples to average, and the number of intervals omitted
+between reads. The terminal configuration is optional.
+
+### Generate analog output
+
+Drive selected output channels with reproducible random values:
+
+```bash
+python test_ao_random.py \
+  --dev cDAQ1Mod1 \
+  --channels cDAQ1Mod1/ao0 cDAQ1Mod1/ao1 \
+  --interval 0.5 \
+  --low 0.0 \
+  --high 3.0 \
+  --seed 1234
+```
+
+The YAML-configured equivalent is:
+
+```bash
+python -m daqio.daqO --config configs/config_test.yml
+```
+
+> **Safety:** Confirm channel assignments, wiring, and voltage limits before
+> enabling analog output. The `daqO` command resets configured outputs to
+> `0 V` when it exits, including after a keyboard interrupt.
+
+### Run asynchronous I/O
+
+`IOasyncExample.py` concurrently performs analog input and output and publishes
+both streams to CSV files:
+
+```bash
+python IOasyncExample.py
+```
+
+`IOasyncInteractive.py` provides an interactive variant with a keypress-based
+exit. Both examples read their default settings from `configs/config_test.yml`.
+
+### Coordinate waveform output and capture
+
+The automation entry point under `scripts/` coordinates waveform generation,
+AI/AO logging, and Pico capture:
+
+```bash
+python scripts/run_waveform_and_pico_capture.py --help
+```
+
+Use the help output to select the capture implementation, configuration,
+waveform, output directory, duration, and naming options appropriate to the
+experiment.
+
+## Configuration
+
+Configuration files are written in YAML. Analog input and output settings must
+remain in distinct top-level sections:
 
 ```yaml
 daqI:
@@ -156,77 +190,98 @@ daqI:
   channels:
     - Dev1/ai0
     - Dev1/ai1
-  freq: 10
-  averages: 5
-  omissions: 0  # number of sample intervals to skip between reads
+  freq: 10000
+  averages: 10
+  omissions: 20
   terminal: RSE
-```
 
-Run the module as a script:
-
-```bash
-python -m daqio.daqI --config configs/config_test.yml
-```
-
-See the module docstring for details on the expected schema and additional
-options.
-
-### Object-oriented analog input (`daqio/ai_reader.py`)
-
-`AIReader` wraps NI‑DAQmx input tasks in a context manager and can perform
-single reads or buffered `read_average` acquisitions.  Construct it from YAML
-with `AIReader.from_yaml("configs/config_test.yml")` and optionally pass
-`publish=publish_ai` to stream results formatted by `configs/daqI_output.yml`.
-
-### Analog output (`daqio/daqO.py`)
-
-`daqio/daqO.py` continuously drives analog-output channels with random voltages
-generated within a user-specified range. Its YAML configuration accepts the
-device name, optional channel list, update interval, voltage bounds and random
-seed.
-Always source these values from the `daqO` section; using `daqI` data for outputs
-can raise NI‑DAQmx `I/O type` errors or drive unintended channels.
-
-Example configuration:
-
-```yaml
 daqO:
-  device: Dev1
+  device: cDAQ1Mod1
   channels:
-    - Dev1/ao0
-    - Dev1/ao1
+    - cDAQ1Mod1/ao0
+    - cDAQ1Mod1/ao1
   interval: 0.5
   low: 0.0
   high: 3.0
   seed: 1234
 ```
 
-Run the module as a script:
+The `daqI` section is exclusively for input channels, and the `daqO` section is
+exclusively for output channels. Interchanging them can produce NI-DAQmx I/O
+type errors or drive an unintended channel.
+
+Available examples include:
+
+- `configs/config_test.yml`: combined AI and AO settings
+- `configs/ai_writer.yml` and `configs/ao_writer.yml`: minimal CSV publisher
+  settings
+- `configs/daqI_output.yml` and `configs/daqO_output.yml`: output schemas for
+  timestamped measurements
+- `configs/OstreamTimeformat.yml`: output-stream time formatting
+
+## Repository structure
+
+| Path | Purpose |
+| --- | --- |
+| `daqio/` | Configuration, NI-DAQmx I/O, asynchronous runners, and CSV publishing |
+| `configs/` | Example acquisition and output configurations |
+| `scripts/` | Higher-level waveform and capture automation |
+| `tests/` | Unit, integration, and hardware-discovery tests |
+| `IOasyncExample.py` | Concurrent AI/AO demonstration |
+| `IOasyncInteractive.py` | Interactive concurrent AI/AO demonstration |
+| `list_devices.py` | NI-DAQmx device enumeration |
+| `test_ai_all.py` | Command-line analog-input sampler |
+| `test_ao_random.py` | Command-line random analog-output generator |
+| `capture_filename.py` | Standardized capture-name utility |
+
+## Testing
+
+Install the development dependencies if they were not installed through the
+`test` extra:
 
 ```bash
-python -m daqio.daqO --config configs/config_test.yml
+python -m pip install -r requirements-dev.txt
 ```
 
-**Safety note:** the module resets all outputs to `0 V` on exit, even when
-interrupted with `Ctrl+C`, to avoid leaving channels in an unsafe state.
+Run the complete test suite with:
 
-Consult the docstring for further information about the CLI and configuration
-options.
+```bash
+python -m pytest
+```
 
-### Async analog output runner (`daqio/ao_runner.py`)
+Individual hardware checks can be selected explicitly, for example:
 
-`AsyncAORunner` drives outputs either with random values or by replaying a
-waveform.  Use `AsyncAORunner(..., interval=0.5)` for random mode or provide a
-`waveform` to play it hardware‑timed at `frequency` cycles per second.  The
-runner publishes each update, enabling logging via `configs/daqO_output.yml`.
+```bash
+python -m pytest tests/test_nidaqmx_devices.py
+python -m pytest tests/test_device_names.py
+```
 
+Hardware-dependent checks require the corresponding runtime and attached
+device. Review the target channels and voltage constraints before executing
+any output test.
 
-Research reported in this publication was supported by the National Institute of Biomedical Imaging and Bioengineering of the National Institutes of Health under Award Number R21EB030654. The content is solely the responsibility of the authors and does not necessarily represent the official views of the National Institutes of Health.
+## Citation
 
-## Temporary NVDA v0.5.0 persistence relay
+If PhantomTest contributes to published work, cite the specific release or
+commit used so that the software configuration is reproducible. Until a DOI or
+`CITATION.cff` record is available, the following BibTeX template may be
+adapted with the repository URL, year, and access date:
 
-This test-only section is temporary and contains no research bytes. It exposes only an expiring relay URL used to move the completed, checksum-verified release into the owner’s Google Drive.
+```bibtex
+@software{phantomtest,
+  author  = {{PhantomTest contributors}},
+  title   = {PhantomTest: Data-Acquisition Testing and Experimentation Utilities},
+  version = {0.1.0},
+  url     = {<repository-url>},
+  year    = {<release-year>},
+  note    = {Accessed: <YYYY-MM-DD>}
+}
+```
 
-- [NVDA v0.5.0 fingerprint](https://base-usb-guidance-gain.trycloudflare.com/NVDA_Q2FY27_PROJECT_ED25519_FINGERPRINT.txt)
-- [NVDA v0.5.0 package](https://base-usb-guidance-gain.trycloudflare.com/NVDA_Q2FY27_primary_source_forecast_v0.5.0.zip)
-- [NVDA v0.5.0 source vault](https://base-usb-guidance-gain.trycloudflare.com/NVDA_Q2FY27_v0.5.0_SOURCE_VAULT.tar.zst)
+## Funding and acknowledgments
+
+Research reported in this publication was supported by the National Institute
+of Biomedical Imaging and Bioengineering of the National Institutes of Health
+under Award Number R21EB030654. The content is solely the responsibility of the
+authors and does not necessarily represent the official views of the National
+Institutes of Health.
